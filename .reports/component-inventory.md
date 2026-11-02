@@ -9,12 +9,28 @@ Upstream tree: 300 files, 100 under `src/`, 17 `.ui` templates + 1 standalone
 `.ui` (shortcuts), 1 GSettings schema (26 keys), 1 GResource manifest,
 59 locales in `po/`.
 
-**State of the port: nothing is ported.** `lib/` holds exactly two files —
-`lib/gnome_text_editor.rb` (a single `require_relative`) and
-`lib/gnome_text_editor/application.rb`, a placeholder window whose content is
-an `Adwaita::StatusPage` reading "The Ruby port has not been written yet."
-Every component below is absent; `lib/gnome_text_editor/application.rb` exists
-as a file but contains none of the real application's behaviour.
+**State of the port: round 1 is in, the GtkSourceView-dependent tail is not.**
+`lib/` holds 45 Ruby files, 7,491 lines, and `test/drive_editor.rb` drives the
+app headless. Present: the application and its action table, the shortcuts
+dialog, the window with its multi-layout view, breakpoints, both menus, its
+action table and its drop target, the page and its actions, the source view
+(over `Gtk::TextView`, not `GtkSource::View`), the statusbar, position label,
+info bar, search bar and search entry, the open popover with its sidebar row,
+model and item, the preferences dialog and its five row classes, the encoding
+dialog and row, the save-changes dialog, the properties panel, the theme
+selector, the fullscreen box, and every model and helper in section 6 except
+the settings-provider stack.
+
+Absent, and mostly for one reason — they need `GtkSource::View`, where this
+round builds over plain `Gtk::TextView`: the source map, recoloring, the
+bundled style schemes, the language dialog and language row, the
+settings-provider stack (`editor-page-settings`, its provider, `-gsettings`,
+`defaults/`, `editorconfig/`, `modelines/`), Vim keybindings and the print
+operation. Two more are independent of it and simply not written yet:
+`editor-focus-chain.c` (`win.focus-neighbor`) and `editor-source-iter.c` (the
+word and paragraph movement and deletion shortcuts). Also
+absent: `po/` and any gettext call, the four bundled symbolic icons, and the
+desktop/metainfo/D-Bus data files.
 
 A note on the mapping: the house style is one upstream source file to one
 `lib/<thing>.rb`, but upstream splits almost every component across a `.c`, a
@@ -44,7 +60,7 @@ App actions: `app.about`, `app.new-window`, `app.help`, `app.quit`,
 `app.remove-recent`, `app.clear-history`, `app.shortcuts`.
 Accelerators: `app.quit` = `<ctrl>q`, `app.help` = `F1`.
 
-Status: **absent** (placeholder file only).
+Status: **present** — lib/gnome_text_editor/application.rb, lib/application_actions.rb.
 
 ### `src/shortcuts-dialog.ui` → `lib/shortcuts_dialog.rb`
 
@@ -56,7 +72,7 @@ A standalone `.ui` with no backing `.c` — a component no widget subclass owns.
 | `Adw.ShortcutsSection` | 10 | — | — | Windows, Zoom, Documents, Copy and Paste, Undo and Redo, Editing, Selections, Movements, Deletion, General |
 | `Adw.ShortcutsItem` | 48 | — | — | one per accelerator; all titles carry `context="shortcut window"` |
 
-Status: **absent**.
+Status: **present** — lib/shortcuts_dialog.rb.
 
 ---
 
@@ -115,13 +131,13 @@ chooser) and two `Adw.AlertDialog`s for close-with-unsaved-changes.
 `src/editor-window-dnd.c` installs a `Gtk.DropTarget` on the window for
 dropped files/URIs — behaviour with no widget of its own.
 
-Status: **absent** (all three files).
+Status: **present** — lib/editor_window.rb, lib/editor_window_actions.rb, lib/editor_window_dnd.rb.
 
 ### `src/editor-fullscreen-box.c` → `lib/editor_fullscreen_box.rb`
 
 A `Gtk.Widget` subclass with `Gtk.Buildable`, `Gtk.BinLayout` and a motion
 `Gtk.EventControllerMotion`: reveals the header bar when the pointer nears the
-top edge in fullscreen. Status: **absent**.
+top edge in fullscreen. Status: **present** — lib/editor_fullscreen_box.rb.
 
 ### `src/editor-theme-selector.c`, `src/editor-theme-selector.ui` → `lib/editor_theme_selector.rb`
 
@@ -133,7 +149,7 @@ The light/dark/follow control in the primary menu's `custom:` slot.
 | `Gtk.Box` | 1 | — | — | id `box` |
 | `Gtk.CheckButton` | 3 | `theme-selector` + one of `follow`/`light`/`dark` | `settings.style-variant` | tooltips "Follow System Style", "Light Style", "Dark Style"; a11y labels "Follow system style", "Light style", "Dark style" |
 
-Status: **absent**.
+Status: **present** — lib/editor_theme_selector.rb.
 
 ---
 
@@ -173,13 +189,13 @@ Page actions (`editor-page-actions.c` + `editor-window-actions.c` targets):
 `page.begin-search`, `page.begin-replace`, `page.show-goto-line`,
 `page.goto-line`, `page.zoom-in`, `page.zoom-out`, `page.zoom-one`.
 
-Status: **absent**.
+Status: **present** — lib/editor_page.rb, lib/editor_page_actions.rb.
 
 ### `src/editor-source-view.c` → `lib/editor_source_view.rb`
 
 `GtkSource.View` subclass: font scaling, draw-spaces, snippets, spell
 checking via libspelling, the `<ctrl>period` emoji chooser, line-height,
-bracket matching, and the `editor` CSS class. Status: **absent**.
+bracket matching, and the `editor` CSS class. Status: **present** — lib/editor_source_view.rb.
 
 ### `src/editor-source-map.c`, `src/editor-source-map.ui` → `lib/editor_source_map.rb`
 
@@ -188,7 +204,7 @@ bracket matching, and the `editor` CSS class. Status: **absent**.
 | `Gtk.Widget` (template root) | 1 | — | — | — |
 | `GtkSource.Map` | 1 | — | — | id `map`, binds its font and view |
 
-Status: **absent**.
+Status: **absent** — lib/editor_source_map.rb not written.
 
 ### `src/editor-position-label.c`, `src/editor-position-label.ui` → `lib/editor_position_label.rb`
 
@@ -198,7 +214,7 @@ Status: **absent**.
 | `Gtk.Box` | 1 | — | — | id `box` |
 | `Gtk.Label` | 4 | — | — | "Ln", `line`, "Col", `column` |
 
-Status: **absent**.
+Status: **present** — lib/editor_position_label.rb.
 
 ### `src/editor-statusbar.c`, `src/editor-statusbar.ui` → `lib/editor_statusbar.rb`
 
@@ -208,7 +224,7 @@ Status: **absent**.
 | `Gtk.Box` | 1 | `statusbar` | — | id `box` |
 | `Gtk.Label` | 5 | — | — | `command_bar_text`, `command_text`, `selection_count`, `mode`, `position` |
 
-Status: **absent**.
+Status: **present** — lib/editor_statusbar.rb.
 
 ### `src/editor-info-bar.c`, `src/editor-info-bar.ui` → `lib/editor_info_bar.rb`
 
@@ -229,7 +245,7 @@ with "_Discard Changes and Reload" and "Save _As…"; "Document Restored" /
 "Unsaved document has been restored."; "Draft Changes Restored" / "Unsaved
 changes to the document have been restored."
 
-Status: **absent**.
+Status: **present** — lib/editor_info_bar.rb.
 
 ### `src/editor-search-bar.c`, `src/editor-search-bar.ui` → `lib/editor_search_bar.rb`
 
@@ -250,7 +266,7 @@ Menu model `options_menu`: Re_gular Expressions (`search-options.regex`),
 _Case Sensitive (`search-options.case-sensitive`), Match Whole _Word Only
 (`search-options.match-whole-word`).
 
-Status: **absent**.
+Status: **present** — lib/editor_search_bar.rb.
 
 ### `src/editor-search-entry.c`, `src/editor-search-entry.ui` → `lib/editor_search_entry.rb`
 
@@ -262,7 +278,7 @@ Status: **absent**.
 | `Gtk.Label` | 1 | — | — | id `info` — the "N of M" occurrence count |
 | `Gtk.GestureClick` | 1 | — | `pressed` → `on_text_clear_button_pressed_cb` | on the clear image |
 
-Status: **absent**.
+Status: **present** — lib/editor_search_entry.rb.
 
 ---
 
@@ -288,7 +304,7 @@ Recent-documents search, the `<ctrl>k` "find document by name" surface.
 | `Gtk.NoSelection` | 1 | — | — | id `selection` (model, not a widget) |
 | `Gtk.BuilderListItemFactory` | 1 | — | — | its `Gtk.ListItem` template instantiates `EditorSidebarRow` — a repeater, one per recent document |
 
-Status: **absent**.
+Status: **present** — lib/editor_open_popover.rb.
 
 ### `src/editor-sidebar-row.c`, `src/editor-sidebar-row.ui` → `lib/editor_sidebar_row.rb`
 
@@ -304,13 +320,13 @@ One recent/open document row. A repeater instance from the popover's factory.
 | `Gtk.Button` | 1 | `circular`, `flat` | `clicked` → `on_remove_clicked_cb` | `remove`, "Remove", `window-close-symbolic` |
 | `Gtk.Label` (standalone) | 1 | — | — | id `tooltip`, the tooltip body |
 
-Status: **absent**.
+Status: **present** — lib/editor_sidebar_row.rb.
 
 ### `src/editor-sidebar-model.c`, `src/editor-sidebar-item.c` → `lib/editor_sidebar_model.rb`, `lib/editor_sidebar_item.rb`
 
 The `GListModel` behind the popover list view and its item type (title,
 subtitle, age, is-modified, draft flag, recent-manager entry). Not widgets;
-needed for the row to have anything to show. Status: **absent**.
+needed for the row to have anything to show. Status: **present** — lib/editor_sidebar_model.rb, lib/editor_sidebar_item.rb.
 
 ---
 
@@ -337,31 +353,31 @@ needed for the row to have anything to show. Status: **absent**.
 | `Adw.SwitchRow` | 1 | — | — | `restore_session` "_Restore Session" + subtitle |
 | `Adw.ButtonRow` | 1 | `destructive-action` | `app.clear-history` | "_Clear History" |
 
-Status: **absent**.
+Status: **present** — lib/editor_preferences_dialog.rb.
 
 ### `src/editor-preferences-row.c` → `lib/editor_preferences_row.rb`
 
 An `Adw.ActionRow` base carrying the GSettings key/schema properties the four
-concrete rows below share. Status: **absent**.
+concrete rows below share. Status: **present** — lib/editor_preferences_row.rb.
 
 ### `src/editor-preferences-switch.c` → `lib/editor_preferences_switch.rb`
 
-`EditorPreferencesRow` + `Gtk.Switch` bound to a GSettings boolean. Status: **absent**.
+`EditorPreferencesRow` + `Gtk.Switch` bound to a GSettings boolean. Status: **present** — lib/editor_preferences_switch.rb.
 
 ### `src/editor-preferences-spin.c` → `lib/editor_preferences_spin.rb`
 
-`EditorPreferencesRow` + `Gtk.SpinButton` bound to a GSettings number. Status: **absent**.
+`EditorPreferencesRow` + `Gtk.SpinButton` bound to a GSettings number. Status: **present** — lib/editor_preferences_spin.rb.
 
 ### `src/editor-preferences-radio.c` → `lib/editor_preferences_radio.rb`
 
 `EditorPreferencesRow` + `Gtk.CheckButton` group bound to a GSettings enum.
-Status: **absent**.
+Status: **present** — lib/editor_preferences_radio.rb.
 
 ### `src/editor-preferences-font.c` → `lib/editor_preferences_font.rb`
 
 An `Adw.ActionRow` that opens a `Gtk.FontDialog`
 (`gtk_font_dialog_choose_font`) and writes the chosen font to GSettings.
-Status: **absent**.
+Status: **present** — lib/editor_preferences_font.rb.
 
 ### `src/editor-language-dialog.c`, `src/editor-language-dialog.ui` → `lib/editor_language_dialog.rb`
 
@@ -381,7 +397,7 @@ Document-type picker, reached from `page.change-language`.
 | `Gtk.ListBox` | 2 | `content` | — | `recent_list_box`, `list_box` — repeaters over languages, rows are `EditorLanguageRow` |
 | `Adw.StatusPage` | 1 | — | — | `edit-find-symbolic`, "No Results Found" — the empty state |
 
-Status: **absent**.
+Status: **absent** — lib/editor_language_dialog.rb not written.
 
 ### `src/editor-language-row.c`, `src/editor-language-row.ui` → `lib/editor_language_row.rb`
 
@@ -390,7 +406,7 @@ Status: **absent**.
 | `Adw.ActionRow` (template root) | 1 | — | — | title is the language name |
 | `Gtk.Image` | 1 | — | — | id `image`, `object-select-symbolic`, shown when selected |
 
-Status: **absent**.
+Status: **absent** — lib/editor_language_row.rb not written.
 
 ### `src/editor-encoding-dialog.c`, `src/editor-encoding-dialog.ui` → `lib/editor_encoding_dialog.rb`
 
@@ -411,7 +427,7 @@ encoding info bar.
 | `Gtk.ListBox` | 1 | `content` | — | id `list_box` — repeater over `EditorEncodingModel`, rows are `EditorEncodingRow` |
 | `Adw.StatusPage` | 1 | — | — | `edit-find-symbolic`, "No Results Found" |
 
-Status: **absent**.
+Status: **present** — lib/editor_encoding_dialog.rb.
 
 ### `src/editor-encoding-row.c`, `src/editor-encoding-row.ui` → `lib/editor_encoding_row.rb`
 
@@ -420,7 +436,7 @@ Status: **absent**.
 | `Adw.ActionRow` (template root) | 1 | — | — | title/subtitle are the encoding's name and charset |
 | `Gtk.Image` | 1 | — | — | id `image`, `object-select-symbolic` |
 
-Status: **absent**.
+Status: **present** — lib/editor_encoding_row.rb.
 
 ### `src/editor-save-changes-dialog.c` → `lib/editor_save_changes_dialog.rb`
 
@@ -432,7 +448,7 @@ The quit/close confirmation.
 | `Adw.PreferencesGroup` | 1 | — | — | the dialog's `extra-child` |
 | `Gtk.CheckButton` | n | — | `toggled` | **repeater** — one per unsaved page; label is the document title, "Untitled Document" or "%s (new)" for drafts |
 
-Status: **absent**.
+Status: **present** — lib/editor_save_changes_dialog.rb.
 
 ### `src/editor-properties-panel.c`, `src/editor-properties-panel.ui`, `src/editor-properties.c` → `lib/editor_properties_panel.rb`, `lib/editor_properties.rb`
 
@@ -451,7 +467,7 @@ The `F9` side panel (sidebar when wide, bottom sheet when narrow).
 | `EditorProperties` | 1 | — | `notify::can-open` → `editor_properties_panel_notify_can_open_cb` | model object |
 | `EditorEncodingModel`, `EditorNewlineModel`, `EditorIndentModel` | 3 | — | — | models feeding the combo rows |
 
-Status: **absent** (both files).
+Status: **present** — lib/editor_properties_panel.rb, lib/editor_properties.rb.
 
 ---
 
@@ -462,15 +478,15 @@ is one upstream `.c`/`.h` pair to one `lib/*.rb`.
 
 | Upstream | → `lib/` | What it is | Present |
 |---|---|---|---|
-| `src/editor-session.c` | `lib/editor_session.rb` | windows, pages, drafts, session save/restore, `session.new-draft` | no |
-| `src/editor-document.c` | `lib/editor_document.rb` | `GtkSource.Buffer` subclass: load, save, encoding, line endings, modified/busy state, draft handling | no |
-| `src/editor-document-statistics.c` | `lib/editor_document_statistics.rb` | lines/words/chars counts for the properties panel | no |
-| `src/editor-buffer-monitor.c` | `lib/editor_buffer_monitor.rb` | watches the file on disk, drives the "changed on disk" info bar | no |
-| `src/editor-properties.c` | `lib/editor_properties.rb` | the properties panel's model object | no |
-| `src/editor-encoding-model.c` | `lib/editor_encoding_model.rb` | `GListModel` of charsets | no |
-| `src/editor-newline-model.c` | `lib/editor_newline_model.rb` | `GListModel` of LF/CRLF/CR | no |
-| `src/editor-indent-model.c` | `lib/editor_indent_model.rb` | `GListModel` of tabs/spaces | no |
-| `src/editor-search-model.c` | `lib/editor_search_model.rb` | search occurrences, the "N of M" count | no |
+| `src/editor-session.c` | `lib/editor_session.rb` | windows, pages, drafts, session save/restore, `session.new-draft` | yes |
+| `src/editor-document.c` | `lib/editor_document.rb` | `GtkSource.Buffer` subclass: load, save, encoding, line endings, modified/busy state, draft handling | yes |
+| `src/editor-document-statistics.c` | `lib/editor_document_statistics.rb` | lines/words/chars counts for the properties panel | yes |
+| `src/editor-buffer-monitor.c` | `lib/editor_buffer_monitor.rb` | watches the file on disk, drives the "changed on disk" info bar | yes |
+| `src/editor-properties.c` | `lib/editor_properties.rb` | the properties panel's model object | yes |
+| `src/editor-encoding-model.c` | `lib/editor_encoding_model.rb` | `GListModel` of charsets | yes |
+| `src/editor-newline-model.c` | `lib/editor_newline_model.rb` | `GListModel` of LF/CRLF/CR | yes |
+| `src/editor-indent-model.c` | `lib/editor_indent_model.rb` | `GListModel` of tabs/spaces | yes |
+| `src/editor-search-model.c` | `lib/editor_search_model.rb` | search occurrences, the "N of M" count | yes |
 | `src/editor-page-settings.c`, `-provider.c` | `lib/editor_page_settings.rb`, `lib/editor_page_settings_provider.rb` | the per-document settings stack | no |
 | `src/editor-page-gsettings.c` | `lib/editor_page_gsettings.rb` | GSettings as a settings provider | no |
 | `src/defaults/editor-page-defaults.c` | `lib/editor_page_defaults.rb` | built-in per-language defaults provider | no |
@@ -479,15 +495,16 @@ is one upstream `.c`/`.h` pair to one `lib/*.rb`.
 | `src/editor-page-vim.c` | `lib/editor_page_vim.rb` | vim keybinding mode (`keybindings` GSetting), drives the statusbar command text | no |
 | `src/editor-print-operation.c` | `lib/editor_print_operation.rb` | `Gtk.PrintOperation` subclass behind `page.print`, uses `styles/printing.xml` | no |
 | `src/editor-recoloring.c` | `lib/editor_recoloring.rb` | tints the window chrome from the style scheme (`recolor-window` GSetting) | no |
-| `src/editor-joined-menu.c` | `lib/editor_joined_menu.rb` | concatenates `GMenuModel`s for the primary menu | no |
-| `src/editor-file-manager.c` | `lib/editor_file_manager.rb` | "Open in File Manager" / show-in-folder | no |
-| `src/editor-path.c` | `lib/editor_path.rb` | home-relative path shortening for titles and rows | no |
+| `src/editor-joined-menu.c` | `lib/editor_joined_menu.rb` | concatenates `GMenuModel`s for the primary menu | yes |
+| `src/editor-file-manager.c` | `lib/editor_file_manager.rb` | "Open in File Manager" / show-in-folder | yes |
+| `src/editor-path.c` | `lib/editor_path.rb` | home-relative path shortening for titles and rows | yes |
 | `src/editor-focus-chain.c` | `lib/editor_focus_chain.rb` | focus movement helper for `win.focus-neighbor` | no |
 | `src/editor-source-iter.c` | `lib/editor_source_iter.rb` | word/paragraph iteration for the movement and deletion shortcuts | no |
-| `src/editor-animation.c` | `lib/editor_animation.rb` | the smooth-scroll animation helper | no |
-| `src/editor-frame-source.c` | `lib/editor_frame_source.rb` | frame-clock `GSource` used by the animation | no |
-| `src/editor-utils.c` | `lib/editor_utils.rb` | shared helpers (date formatting, "Untitled Document", etc.) | no |
-| `src/line-reader-private.h` | fold into `lib/editor_document.rb` | line splitting during load | no |
+| `src/editor-animation.c` | `lib/editor_animation.rb` | the smooth-scroll animation helper | yes |
+| `src/editor-frame-source.c` | folded into `lib/editor_animation.rb` | frame-clock `GSource` used by the animation; the Ruby port ticks off the widget's frame clock inside `EditorAnimation`, so there is no separate file | yes |
+| `src/editor-utils.c` | `lib/editor_utils.rb` | shared helpers (date formatting, "Untitled Document", etc.) | yes |
+| `src/line-reader-private.h` | folded into `lib/editor_document.rb` | line splitting during load | yes |
+| *(no single upstream file — GSettings is read inline throughout `src/`)* | `lib/editor_settings.rb` | port-only: one wrapper over the 26 schema keys, `Gio::Settings` when the compiled schema is installed and a JSON file otherwise (GLib aborts rather than raises on a missing schema) | yes |
 
 Non-UI / build-only, no port target: `src/editor-types.h`,
 `src/editor-types-private.h`, `src/build-ident.h.in`, `src/meson.build`,
@@ -499,9 +516,9 @@ Non-UI / build-only, no port target: `src/editor-types.h`,
 
 | Upstream | → port | What | Present |
 |---|---|---|---|
-| `src/style.css` | `data/style.css` loaded by a `Gtk::CssProvider` in `lib/gnome_text_editor/application.rb` | classes `window.org-gnome-TextEditor`, `dialog.preferences`, `.language-dialog`, `box.statusbar`, `row.location.property`, `page`, `popover`, plus `.theme-selector`, `.large-button`, `.editor`, `.property`, `.open-popover`, `.searchbar` | no |
+| `src/style.css` | `data/style.css` loaded by a `Gtk::CssProvider` in `lib/gnome_text_editor/application.rb` | classes `window.org-gnome-TextEditor`, `dialog.preferences`, `.language-dialog`, `box.statusbar`, `row.location.property`, `page`, `popover`, plus `.theme-selector`, `.large-button`, `.editor`, `.property`, `.open-popover`, `.searchbar` | yes |
 | `src/styles/{builder,builder-dark,peninsula,peninsula-dark,printing}.xml` | ship as data, register with `GtkSource::StyleSchemeManager` | 5 bundled style schemes | no |
-| `data/org.gnome.TextEditor.gschema.xml` | compile and ship; read via `Gio::Settings` | 26 keys: auto-save-delay, style-variant, indent-style, auto-indent, tab-width, indent-width, show-line-numbers, show-right-margin, right-margin-position, show-map, show-grid, highlight-current-line, wrap-text, use-system-font, custom-font, style-scheme, discover-settings, spellcheck, restore-session, recolor-window, keybindings, last-save-directory, draw-spaces (flags), enable-snippets, line-height, highlight-matching-brackets | no |
+| `data/org.gnome.TextEditor.gschema.xml` | `data/schemas/org.rubygtkproject.GnomeTextEditor.gschema.xml`, compiled and read through `lib/editor_settings.rb` | 26 keys: auto-save-delay, style-variant, indent-style, auto-indent, tab-width, indent-width, show-line-numbers, show-right-margin, right-margin-position, show-map, show-grid, highlight-current-line, wrap-text, use-system-font, custom-font, style-scheme, discover-settings, spellcheck, restore-session, recolor-window, keybindings, last-save-directory, draw-spaces (flags), enable-snippets, line-height, highlight-matching-brackets | yes (all 26 keys, renamed to the fork's app id) |
 | `src/org.gnome.TextEditor.gresource.xml` | not needed — the Ruby port has no `.ui` files by design | the 17 templates it lists are the components above | n/a |
 | `data/icons/hicolor/scalable/actions/*.svg` | ship as data, add to the icon theme search path | `document-admin-symbolic`, `document-modified-symbolic`, `external-link-symbolic`, `info-outline-symbolic` — referenced by the info bar and the properties button | no |
 | `data/org.gnome.TextEditor.desktop.in.in`, `.metainfo.xml.in.in`, `.service.in` | `data/` equivalents | desktop entry, AppStream metadata, D-Bus activation | no |
@@ -513,16 +530,25 @@ Non-UI / build-only, no port target: `src/editor-types.h`,
 ## Totals
 
 - 17 `.ui` templates + 1 standalone `.ui` → 18 declarative component units.
-- 29 port-target component files with widgets (sections 1–5).
-- 27 model/support files (section 6).
-- 7 resource groups (section 7).
+- 29 port-target component files with widgets (sections 1–5): **26 present, 3 absent**
+  (`editor_source_map.rb`, `editor_language_dialog.rb`, `editor_language_row.rb`).
+- 27 model/support files (section 6): **16 present, 10 absent**, 1 folded in
+  (`editor-frame-source.c` → `editor_animation.rb`), plus the port-only
+  `editor_settings.rb`.
+- 7 resource groups (section 7): **2 present** (`data/style.css`, the GSettings
+  schema), 4 absent, 1 n/a.
 - Actions to install: 7 app, 13 win, 20 page, 5 search, 3 search-options,
   1 settings, 1 session.
 - 48 keyboard shortcuts in 10 sections.
-- Present on `ruby`: 0 of them. `lib/gnome_text_editor/application.rb` is a
-  placeholder; `lib/gnome/text/editor/rb/version.rb` is gem plumbing.
+
+The remaining gap is one theme: everything left depends on GtkSourceView
+(syntax highlighting, the style schemes, the map, the per-language settings
+stack) or on the translation catalogue.
 
 ## Suggested port order
+
+Steps 1–10 are done except the three widget files named above; what is left is
+step 11 plus the GtkSourceView swap that unblocks it.
 
 1. `editor_document.rb` + `editor_utils.rb` + `editor_path.rb` — a buffer that loads and saves.
 2. `editor_source_view.rb`, `editor_page.rb` — one document on screen.
