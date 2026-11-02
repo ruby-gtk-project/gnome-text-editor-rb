@@ -50,3 +50,6 @@ Appraisal.*.gemfile.lock
 # nix/ is the runtime gemdir for flake.nix: bundlerEnv needs its lock and
 # gemset committed or the app cannot be built reproducibly.
 !nix/Gemfile.lock
+
+# Compiled GSettings schemas are a build product of data/schemas/*.gschema.xml.
+data/schemas/gschemas.compiled
