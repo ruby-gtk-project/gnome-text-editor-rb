@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.rubygtkproject.GnomeTextEditor
+Exec=@bindir@/gnome-text-editor --gapplication-service

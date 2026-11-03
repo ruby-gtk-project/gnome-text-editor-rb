@@ -145,6 +145,32 @@
             # resolves against the copied tree.
             install -Dm755 exe/${launcher} $out/share/gnome-text-editor/exe/${launcher}
 
+            # The desktop entry, the AppStream metadata, the D-Bus service file
+            # and the icon theme, where a desktop expects to find them. The
+            # service file names the launcher by absolute path, which is why it
+            # ships as a template.
+            for desktop in data/*.desktop; do
+              if [ -e "$desktop" ]; then
+                install -Dm644 "$desktop" $out/share/applications/$(basename "$desktop")
+              fi
+            done
+            for metainfo in data/*.metainfo.xml; do
+              if [ -e "$metainfo" ]; then
+                install -Dm644 "$metainfo" $out/share/metainfo/$(basename "$metainfo")
+              fi
+            done
+            for service in data/*.service.in; do
+              if [ -e "$service" ]; then
+                name=$(basename "$service" .in)
+                mkdir -p $out/share/dbus-1/services
+                sed "s|@bindir@|$out/bin|g" "$service" > $out/share/dbus-1/services/$name
+              fi
+            done
+            if [ -d data/icons ]; then
+              mkdir -p $out/share/icons
+              cp -r data/icons/* $out/share/icons/
+            fi
+
             # Compile any GSettings schema the port ships.
             if [ -d data/schemas ]; then
               mkdir -p $out/share/glib-2.0/schemas

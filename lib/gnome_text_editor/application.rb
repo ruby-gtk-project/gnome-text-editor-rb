@@ -34,6 +34,7 @@ module GnomeTextEditor
 
         app.signal_connect('startup') do
           load_stylesheet
+          load_icons
           apply_style_variant
           settings.on_changed('style-variant') { apply_style_variant }
           settings.on_changed('line-height') { apply_line_height }
@@ -124,6 +125,28 @@ module GnomeTextEditor
           end
         end
       end
+
+      # The four action symbolics the window and the info bar name ship beside
+      # lib/ as data/icons, laid out as an icon theme. Upstream reaches them
+      # through its GResource bundle, which the icon theme reads from
+      # /org/gnome/TextEditor/icons; this port adds the directory to the
+      # display's icon theme instead, and the packaged build also installs it
+      # into share/icons.
+      def load_icons
+        icons_path.then do |path|
+          if Dir.exist?(path)
+            Gtk::IconTheme.get_for_display(Gdk::Display.default).add_search_path(path)
+          end
+        end
+      end
+
+      def icons_path = File.join(
+        __dir__,
+        '..',
+        '..',
+        'data',
+        'icons',
+      )
 
       def css_path = File.join(
         __dir__,
