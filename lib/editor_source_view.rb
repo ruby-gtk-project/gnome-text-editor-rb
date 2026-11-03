@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require_relative 'editor_source_iter'
 require_relative 'editor_utils'
 
 # EditorSourceView is the text view a page edits in: the font and zoom, the
@@ -181,15 +182,86 @@ class EditorSourceView < Gtk::TextView
 
     # Tab inserts spaces when the document asks for spaces, and Return copies
     # the previous line's indentation when auto-indent is on. GtkSourceView
-    # does both for upstream.
+    # does both for upstream, and it is also where upstream's Ctrl+arrow and
+    # Ctrl+Backspace land on the editor's own word boundaries rather than
+    # Pango's — here that is EditorSourceIter, called from the same place.
     def key_controller
       @key_controller ||= Gtk::EventControllerKey.new.tap do |controller|
-        controller.signal_connect('key-pressed') do |_ctrl, keyval, _code, _state|
-          case keyval
-          when Gdk::Keyval::KEY_Tab then insert_indent
-          when Gdk::Keyval::KEY_Return, Gdk::Keyval::KEY_KP_Enter then insert_newline_with_indent
-          else false
+        controller.signal_connect('key-pressed') do |_ctrl, keyval, _code, state|
+          if state.control_mask?
+            word_key_pressed(keyval, extend: state.shift_mask?)
+          else
+            plain_key_pressed(keyval)
           end
+        end
+      end
+    end
+
+    def plain_key_pressed(keyval)
+      case keyval
+      when Gdk::Keyval::KEY_Tab then insert_indent
+      when Gdk::Keyval::KEY_Return, Gdk::Keyval::KEY_KP_Enter then insert_newline_with_indent
+      else false
+      end
+    end
+
+    # Ctrl+Left and Ctrl+Right move by word, Shift extends the selection the
+    # same way, and Ctrl+Backspace and Ctrl+Delete eat the word to either side.
+    def word_key_pressed(keyval, extend:)
+      case keyval
+      when Gdk::Keyval::KEY_Left, Gdk::Keyval::KEY_KP_Left then move_word(-1, extend: extend)
+      when Gdk::Keyval::KEY_Right, Gdk::Keyval::KEY_KP_Right then move_word(1, extend: extend)
+      when Gdk::Keyval::KEY_BackSpace then delete_word(-1)
+      when Gdk::Keyval::KEY_Delete, Gdk::Keyval::KEY_KP_Delete then delete_word(1)
+      else false
+      end
+    end
+
+    # The word boundary on one side of an iter: EditorSourceIter's definition,
+    # which counts the underscore as part of an identifier and a run of
+    # punctuation as a word of its own.
+    def word_boundary(iter, direction)
+      if direction.negative?
+        EditorSourceIter.backward_visible_word_start(iter)
+      else
+        EditorSourceIter.forward_visible_word_end(iter)
+      end
+    end
+
+    def move_word(direction, extend:)
+      word_boundary(cursor_iter, direction).then do |target|
+        if extend
+          buffer.move_mark(buffer.get_mark('insert'), target)
+        else
+          buffer.place_cursor(target)
+        end
+      end
+      scroll_to_insert
+      true
+    end
+
+    # A selection goes first, which is what every other delete key does; with
+    # none, the word to one side of the cursor goes.
+    def delete_word(direction)
+      if editable?
+        if buffer.selection_bounds
+          buffer.delete_selection(true, true)
+        else
+          delete_to_word_boundary(direction)
+        end
+        scroll_to_insert
+        true
+      else
+        false
+      end
+    end
+
+    def delete_to_word_boundary(direction)
+      cursor_iter.then do |iter|
+        word_boundary(iter, direction).then do |target|
+          buffer.begin_user_action
+          buffer.delete(iter, target)
+          buffer.end_user_action
         end
       end
     end

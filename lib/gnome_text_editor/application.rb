@@ -36,14 +36,7 @@ module GnomeTextEditor
           load_stylesheet
           apply_style_variant
           settings.on_changed('style-variant') { apply_style_variant }
-          settings.on_changed('use-system-font') { apply_font }
-          settings.on_changed('custom-font') { apply_font }
-          settings.on_changed('line-height') { apply_font }
-          settings.on_changed('wrap-text') { apply_wrap }
-          settings.on_changed('tab-width') { apply_indentation }
-          settings.on_changed('indent-width') { apply_indentation }
-          settings.on_changed('indent-style') { apply_indentation }
-          settings.on_changed('auto-indent') { apply_indentation }
+          settings.on_changed('line-height') { apply_line_height }
           settings.on_changed('auto-save-delay') { session.auto_save_delay = settings.auto_save_delay }
 
           actions.build
@@ -78,7 +71,7 @@ module GnomeTextEditor
     def session
       @session ||= EditorSession.new(settings: settings).tap do |editor_session|
         editor_session.window_factory = -> { new_window(editor_session) }
-        editor_session.page_factory = ->(document) { EditorPage.new(document) }
+        editor_session.page_factory = ->(document) { EditorPage.new(document, settings) }
       end
     end
 
@@ -109,9 +102,7 @@ module GnomeTextEditor
       def present(window)
         window&.tap do |target|
           target.present
-          apply_font
-          apply_wrap
-          apply_indentation
+          apply_line_height
         end
       end
 
@@ -142,6 +133,16 @@ module GnomeTextEditor
         CSS_RESOURCE,
       )
 
+      # The line height is the one view setting upstream drives straight from
+      # its GSettings rather than through the per-page settings stack; the font,
+      # the wrap mode and the indentation come from each page's
+      # EditorPageSettings, so that an .editorconfig or a modeline can overrule
+      # the preferences for one document without the application pushing the
+      # preferences back over them.
+      def apply_line_height
+        each_view { |view| view.line_height = settings.line_height }
+      end
+
       # "follow", "light" or "dark", the three values the schema allows.
       def apply_style_variant
         case settings.style_variant
@@ -151,38 +152,6 @@ module GnomeTextEditor
           style_manager.color_scheme = Adwaita::ColorScheme::FORCE_DARK
         else
           style_manager.color_scheme = Adwaita::ColorScheme::DEFAULT
-        end
-      end
-
-      def apply_font
-        font_description.then do |font_desc|
-          each_view do |view|
-            view.font_desc = font_desc
-            view.line_height = settings.line_height
-          end
-        end
-      end
-
-      # The system monospace font comes from libadwaita's style manager, which
-      # tracks the desktop's own setting.
-      def font_description
-        if settings.use_system_font?
-          Pango::FontDescription.new(style_manager.monospace_font_name)
-        else
-          Pango::FontDescription.new(settings.custom_font)
-        end
-      end
-
-      def apply_wrap
-        each_view { |view| view.wrap_text = settings.wrap_text? }
-      end
-
-      def apply_indentation
-        each_view do |view|
-          view.tab_width = settings.tab_width
-          view.indent_width = settings.indent_width
-          view.insert_spaces_instead_of_tabs = settings.indent_style == 'space'
-          view.auto_indent = settings.auto_indent?
         end
       end
 

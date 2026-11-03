@@ -4,6 +4,7 @@ require 'adwaita'
 require_relative 'editor_document'
 require_relative 'editor_info_bar'
 require_relative 'editor_page_actions'
+require_relative 'editor_page_settings'
 require_relative 'editor_path'
 require_relative 'editor_position_label'
 require_relative 'editor_search_bar'
@@ -21,10 +22,11 @@ require_relative 'editor_utils'
 # GtkSourceView — so the horizontal box upstream puts the view and the map in
 # holds only the view.
 class EditorPage < Gtk::Box
-  def initialize(document)
+  def initialize(document, settings)
     super(:vertical, 0)
 
     @document = document
+    @settings = settings
     @changed_listeners = []
     @actions = EditorPageActions.new(self)
   end
@@ -73,6 +75,10 @@ class EditorPage < Gtk::Box
       end
 
       @actions.build
+
+      page_settings.on_changed { |changed| apply_settings(changed) }
+      page_settings.build
+      apply_settings(EditorPageSettings::KEYS)
 
       connect_document
       search_bar.bind_document(@document)
@@ -237,6 +243,10 @@ class EditorPage < Gtk::Box
 
   def source_view = @source_view ||= EditorSourceView.new(@document)
 
+  # The settings this document is edited under: the user's preferences, under
+  # whatever its language, its .editorconfig and its modelines have to say.
+  def page_settings = @page_settings ||= EditorPageSettings.new(@document, settings: @settings)
+
   def info_bar = @info_bar ||= EditorInfoBar.new
 
   def search_bar = @search_bar ||= EditorSearchBar.new
@@ -328,7 +338,39 @@ class EditorPage < Gtk::Box
     end
   end
 
+  # The settings the port's view can honour: the font, the wrap mode and the
+  # indentation. Upstream binds the others — line numbers, the right margin,
+  # the background grid, the overview map, the style scheme and bracket
+  # matching — to GtkSourceView properties, which have no counterpart here.
+  def apply_settings(changed)
+    tap do
+      changed.each do |key|
+        case key
+        when :custom_font then apply_font
+        when :wrap_text then source_view.wrap_text = page_settings.wrap_text
+        when :tab_width then source_view.tab_width = page_settings.tab_width
+        when :indent_width then source_view.indent_width = page_settings.indent_width
+        when :auto_indent then source_view.auto_indent = page_settings.auto_indent
+        when :insert_spaces_instead_of_tabs
+          source_view.insert_spaces_instead_of_tabs = page_settings.insert_spaces_instead_of_tabs
+        end
+      end
+    end
+  end
+
   private
+
+    # No font of its own leaves the view on the system monospace, which is what
+    # upstream's binding does when the custom font is unset.
+    def apply_font
+      page_settings.custom_font.then do |font|
+        if font
+          source_view.font_desc = Pango::FontDescription.new(font)
+        else
+          source_view.font_desc = nil
+        end
+      end
+    end
 
     def clipboard = Gdk::Display.default.clipboard
 

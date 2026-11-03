@@ -61,8 +61,74 @@ class EditorDocument < Gtk::TextBuffer
     nil,
     nil,
   )
+  define_signal(
+    'language_changed',
+    GLib::Signal::RUN_LAST,
+    nil,
+    nil,
+  )
 
   APP_ID = 'org.rubygtkproject.GnomeTextEditor'
+
+  # Upstream asks GtkSourceLanguageManager to guess a GtkSourceLanguage from
+  # the file's name and content type, and that language drives both syntax
+  # highlighting and the per-language settings defaults. There is no
+  # GtkSourceView in this port, so a document's language is only the
+  # identifier the settings providers key on — EditorPageDefaults and the
+  # modelines — and it is guessed from the file's name with the two tables
+  # below, whose ids are GtkSourceView's own.
+  LANGUAGE_BY_BASENAME = {
+    '.bashrc'           => 'sh',
+    '.profile'          => 'sh',
+    '.zshrc'            => 'sh',
+    'CMakeLists.txt'    => 'cmake',
+    'Dockerfile'        => 'docker',
+    'Gemfile'           => 'ruby',
+    'GNUmakefile'       => 'makefile',
+    'Makefile'          => 'makefile',
+    'Rakefile'          => 'ruby',
+    'makefile'          => 'makefile',
+    'meson.build'       => 'meson',
+    'meson_options.txt' => 'meson',
+  }.freeze
+
+  LANGUAGE_BY_EXTENSION = {
+    'c'        => 'c',
+    'cc'       => 'cpp',
+    'cpp'      => 'cpp',
+    'cs'       => 'c-sharp',
+    'css'      => 'css',
+    'cxx'      => 'cpp',
+    'diff'     => 'diff',
+    'go'       => 'go',
+    'h'        => 'chdr',
+    'hh'       => 'cpphdr',
+    'hpp'      => 'cpphdr',
+    'htm'      => 'html',
+    'html'     => 'html',
+    'ini'      => 'ini',
+    'java'     => 'java',
+    'js'       => 'js',
+    'json'     => 'json',
+    'lua'      => 'lua',
+    'md'       => 'markdown',
+    'markdown' => 'markdown',
+    'patch'    => 'diff',
+    'php'      => 'php',
+    'pl'       => 'perl',
+    'py'       => 'python3',
+    'rb'       => 'ruby',
+    'rs'       => 'rust',
+    'sh'       => 'sh',
+    'sql'      => 'sql',
+    'toml'     => 'toml',
+    'ts'       => 'typescript',
+    'vala'     => 'vala',
+    'vapi'     => 'vala',
+    'xml'      => 'xml',
+    'yaml'     => 'yaml',
+    'yml'      => 'yaml',
+  }.freeze
 
   # Upstream's TITLE_MAX_LEN and TITLE_LAST_WORD_POS: a draft's title is the
   # first hundred characters of its text, cut at a word boundary if one turns
@@ -98,6 +164,8 @@ class EditorDocument < Gtk::TextBuffer
     @had_error = false
     @fallback_used = false
     @error_message = nil
+    @language_id = nil
+    @language_id_overridden = false
     @monitor = EditorBufferMonitor.new { mark_externally_modified }
     @monitor.file = @file
 
@@ -158,6 +226,29 @@ class EditorDocument < Gtk::TextBuffer
   def title
     (@file ? File.basename(@file.parse_name) : title_from_text).then do |base|
       @readonly ? "#{base} #{READ_ONLY_SUFFIX}" : base
+    end
+  end
+
+  # The language this document is written in, as a GtkSourceView language id:
+  # what a modeline said it is, or the guess from the file's name.
+  def language_id
+    if @language_id_overridden
+      @language_id
+    else
+      guessed_language_id
+    end
+  end
+
+  # What a modeline asks for, which is where upstream sets the buffer's
+  # language too; nil means no language at all.
+  def language_id=(language_id)
+    (language_id != self.language_id).then do |changed|
+      @language_id = language_id
+      @language_id_overridden = true
+
+      if changed
+        signal_emit('language_changed')
+      end
     end
   end
 
@@ -242,7 +333,13 @@ class EditorDocument < Gtk::TextBuffer
 
     begin
       write_text(file, encoded_text)
-      @file = file
+      (file != @file).then do |moved|
+        @file = file
+
+        if moved
+          signal_emit('language_changed')
+        end
+      end
       @monitor.file = file
       @monitor.etag = query_etag(file)
       @externally_modified = false
@@ -422,8 +519,19 @@ class EditorDocument < Gtk::TextBuffer
   def signal_do_busy_changed = nil
   def signal_do_state_changed = nil
   def signal_do_saved = nil
+  def signal_do_language_changed = nil
 
   private
+
+    # GtkSourceLanguageManager's guess, as far as the file's name takes it.
+    def guessed_language_id
+      @file&.then do |file|
+        File.basename(file.parse_name).then do |basename|
+          LANGUAGE_BY_BASENAME[basename] ||
+            LANGUAGE_BY_EXTENSION[File.extname(basename).delete_prefix('.').downcase]
+        end
+      end
+    end
 
     def statistics_listeners = @statistics_listeners ||= []
 
