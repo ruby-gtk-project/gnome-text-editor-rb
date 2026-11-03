@@ -6,6 +6,7 @@
 $LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
 
 require 'tmpdir'
+require 'editor_focus_chain'
 require 'gnome_text_editor'
 
 # The drive wants a session of its own, so it neither reads nor writes the one
@@ -56,6 +57,33 @@ Dir.mktmpdir('gnome-text-editor-rb') do |dir|
         window.visible_page.begin_search(text: 'alpha')
         unless window.visible_page.search_bar.model.occurrence_count == 2
           raise 'no matches'
+        end
+      end
+      check.call('focus chain walks the search bar') do
+        window.visible_page.search_bar.then do |bar|
+          bar.replace_mode = true
+          bar.search_entry.grab_focus
+
+          unless EditorFocusChain.focus_child(bar, bar.focus_chain, :tab_forward)
+            raise 'tab forward focused nothing'
+          end
+          unless EditorFocusChain.contains_focus?(bar.replace_entry)
+            raise 'tab forward skipped the replace entry'
+          end
+          unless EditorFocusChain.focus_child(bar, bar.focus_chain, :tab_backward)
+            raise 'tab backward focused nothing'
+          end
+          unless EditorFocusChain.contains_focus?(bar.search_entry)
+            raise 'tab backward did not come back to the search entry'
+          end
+
+          bar.replace_mode = false
+          bar.search_entry.grab_focus
+          EditorFocusChain.focus_child(bar, bar.focus_chain, :tab_forward)
+
+          if EditorFocusChain.contains_focus?(bar.replace_entry)
+            raise 'tab forward focused the hidden replace entry'
+          end
         end
       end
       check.call('replace-all') do

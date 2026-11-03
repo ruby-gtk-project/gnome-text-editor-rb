@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require_relative 'editor_focus_chain'
 require_relative 'editor_search_entry'
 require_relative 'editor_search_model'
 require_relative 'editor_utils'
@@ -85,6 +86,7 @@ class EditorSearchBar < Gtk::Grid
       )
 
       insert_action_group('search-options', option_actions)
+      add_controller(focus_controller)
 
       search_entry.on_changed { |text| @model&.search_text = text }
       search_entry.on_activate { move_next }
@@ -94,6 +96,23 @@ class EditorSearchBar < Gtk::Grid
   end
 
   attr_reader :model
+
+  # The order Tab walks the bar in, which is upstream's own queue: the two
+  # entries, the match buttons, the mode and option buttons, the close button
+  # and then the two replace buttons.
+  def focus_chain
+    [
+      search_entry,
+      replace_entry,
+      move_previous_button,
+      move_next_button,
+      replace_mode_button,
+      options_button,
+      close_button,
+      replace_button,
+      replace_all_button,
+    ]
+  end
 
   # Points the bar at a document. Upstream re-targets its search context the
   # same way when the page's document changes.
@@ -235,6 +254,23 @@ class EditorSearchBar < Gtk::Grid
   end
 
   private
+
+    # Tab and Shift+Tab walk #focus_chain rather than the packing order.
+    # Upstream does this from the widget's focus vfunc, which the Ruby
+    # bindings cannot override, so the controller runs in the capture phase
+    # and only claims the two keys.
+    def focus_controller
+      @focus_controller ||= Gtk::EventControllerKey.new.tap do |controller|
+        controller.propagation_phase = :capture
+        controller.signal_connect('key-pressed') do |_ctrl, keyval, _code, _state|
+          case keyval
+          when Gdk::Keyval::KEY_Tab then EditorFocusChain.focus_child(self, focus_chain, :tab_forward)
+          when Gdk::Keyval::KEY_ISO_Left_Tab then EditorFocusChain.focus_child(self, focus_chain, :tab_backward)
+          else false
+          end
+        end
+      end
+    end
 
     def flat_button(icon_name, tooltip)
       Gtk::Button.new.tap do |button|
