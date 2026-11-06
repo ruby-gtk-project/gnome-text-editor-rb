@@ -4,6 +4,7 @@ require 'adwaita'
 require_relative 'editor_fullscreen_box'
 require_relative 'editor_open_popover'
 require_relative 'editor_properties_panel'
+require_relative 'editor_recoloring'
 require_relative 'editor_statusbar'
 require_relative 'editor_theme_selector'
 require_relative 'editor_utils'
@@ -130,6 +131,8 @@ class EditorWindow < Gtk::ApplicationWindow
       connect_properties
       connect_open_popover
       connect_close_request
+
+      @settings.on_changed('recolor-window') { apply_recoloring }
 
       update_state
     end
@@ -259,6 +262,7 @@ class EditorWindow < Gtk::ApplicationWindow
       end
 
       @actions.update(visible_page)
+      apply_recoloring
     end
   end
 
@@ -565,6 +569,24 @@ class EditorWindow < Gtk::ApplicationWindow
   end
 
   private
+
+    def recoloring_css_provider = @recoloring_css_provider ||= Gtk::CssProvider.new
+
+    # Upstream's chrome-recolouring: reapplies, on every update_state, a
+    # CssProvider carrying EditorRecoloring's @define-color rules for the
+    # visible page's style scheme — or clears it when there is no page, the
+    # scheme is Adwaita, or the "recolor-window" setting is off.
+    def apply_recoloring
+      if @settings.recolor_window?
+        css = visible_page&.document&.style_scheme&.then { |scheme| EditorRecoloring.generate_css(scheme) }
+      else
+        css = nil
+      end
+      recoloring_css_provider.load(data: css || '')
+      Gtk::StyleContext.add_provider_for_display(
+        Gdk::Display.default, recoloring_css_provider, Gtk::StyleProvider::PRIORITY_APPLICATION,
+      )
+    end
 
     def custom_item(name)
       Gio::MenuItem.new(nil, nil).tap { |item| item.set_attribute_value('custom', GLib::Variant.new(name)) }

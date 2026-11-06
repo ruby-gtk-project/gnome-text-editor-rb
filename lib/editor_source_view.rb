@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require 'gtksourceview5'
+require 'libspelling'
 require_relative 'editor_source_iter'
 require_relative 'editor_utils'
 
@@ -8,13 +10,14 @@ require_relative 'editor_utils'
 # wrap mode, the indentation, and the line-wise editing commands.
 #
 # Ported from upstream's src/editor-source-view.c. Upstream derives from
-# GtkSourceView, so it inherits auto-indent, tab handling, smart home/end and
-# the zoom machinery's font override; this port derives from GtkTextView and
-# implements the ones the editor's settings expose — auto indent, indent
-# width, tab width, spaces instead of tabs — on top of it. Syntax
-# highlighting, snippets, the right-margin line and the spelling menu come
-# from GtkSourceView and have no counterpart here.
-class EditorSourceView < Gtk::TextView
+# GtkSourceView, and so does this port, via the gtksourceview5 gem — auto
+# indent, tab handling, smart home/end, the right-margin line, the current
+# line highlight and bracket matching are all real GtkSource::View
+# properties here, set straight from the page's settings in
+# EditorPage#apply_settings rather than hand-rolled. What this class adds on
+# top is the zoom machinery's font override and the Ctrl+arrow/Backspace word
+# boundaries from EditorSourceIter, which GtkSourceView does not provide.
+class EditorSourceView < GtkSource::View
   type_register
 
   DEFAULT_FONT_SIZE = 11
@@ -26,13 +29,16 @@ class EditorSourceView < Gtk::TextView
     @font_scale = 0
     @font_desc = nil
     @line_height = 1.2
-    @auto_indent = true
-    @insert_spaces_instead_of_tabs = false
-    @tab_width = 8
-    @indent_width = -1
     @zoom_listeners = []
 
     self.buffer = document
+    self.monospace = true
+    self.auto_indent = true
+    self.insert_spaces_instead_of_tabs = false
+    self.tab_width = 8
+    self.indent_width = -1
+    self.smart_backspace = true
+    self.smart_home_end = :before
     add_css_class(css_class)
     Gtk::StyleContext.add_provider_for_display(Gdk::Display.default, css_provider, CSS_PRIORITY)
   end
@@ -45,15 +51,21 @@ class EditorSourceView < Gtk::TextView
       add_controller(key_controller)
       add_controller(shortcut_controller)
       insert_action_group('buffer', buffer_actions)
+      insert_action_group('spelling', spelling_adapter)
+      self.extra_menu = spelling_adapter.menu_model
       buffer.signal_connect('busy_changed') { self.editable = !buffer.loading? }
       update_css
     end
   end
 
-  attr_reader :font_scale, :font_desc, :tab_width, :indent_width
+  # Whether misspellings are underlined and offered corrections — upstream's
+  # "spellcheck" GSetting, which this port's libspelling adapter answers to
+  # directly rather than through anything hand-rolled.
+  def spellcheck=(value)
+    spelling_adapter.enabled = value
+  end
 
-  def auto_indent? = @auto_indent
-  def insert_spaces_instead_of_tabs? = @insert_spaces_instead_of_tabs
+  attr_reader :font_scale, :font_desc
 
   # Zoom is counted in points added to the configured font size, which is how
   # upstream's font_scale works: zoom(0) resets it.
@@ -88,27 +100,6 @@ class EditorSourceView < Gtk::TextView
     @line_height = line_height
     update_css
   end
-
-  def auto_indent=(value)
-    @auto_indent = value
-  end
-
-  def insert_spaces_instead_of_tabs=(value)
-    @insert_spaces_instead_of_tabs = value
-  end
-
-  def tab_width=(width)
-    @tab_width = width
-    update_tab_stops
-  end
-
-  def indent_width=(width)
-    @indent_width = width
-  end
-
-  # How many columns one indent step is: the indent width when set, otherwise
-  # the tab width, which is what -1 means in the GSettings schema.
-  def effective_indent_width = @indent_width.to_i.positive? ? @indent_width : @tab_width
 
   def wrap_text=(wrap_text)
     self.wrap_mode = EditorUtils.wrap_mode(wrap_text)
@@ -161,6 +152,12 @@ class EditorSourceView < Gtk::TextView
 
     def css_provider = @css_provider ||= Gtk::CssProvider.new
 
+    def spelling_adapter
+      @spelling_adapter ||= Spelling::TextBufferAdapter.new(buffer, Spelling::Checker.default).tap do |adapter|
+        adapter.enabled = false
+      end
+    end
+
     # Each view gets its own class so its font and zoom are its own, even
     # though the provider is installed for the whole display — the Ruby
     # bindings' per-widget style context is deprecated.
@@ -180,28 +177,19 @@ class EditorSourceView < Gtk::TextView
       end
     end
 
-    # Tab inserts spaces when the document asks for spaces, and Return copies
-    # the previous line's indentation when auto-indent is on. GtkSourceView
-    # does both for upstream, and it is also where upstream's Ctrl+arrow and
-    # Ctrl+Backspace land on the editor's own word boundaries rather than
-    # Pango's — here that is EditorSourceIter, called from the same place.
+    # Tab, Return and auto-indent are GtkSourceView's own. What is left for
+    # this controller is upstream's Ctrl+arrow and Ctrl+Backspace landing on
+    # the editor's own word boundaries rather than Pango's — EditorSourceIter,
+    # called from word_key_pressed below.
     def key_controller
       @key_controller ||= Gtk::EventControllerKey.new.tap do |controller|
         controller.signal_connect('key-pressed') do |_ctrl, keyval, _code, state|
           if state.control_mask?
             word_key_pressed(keyval, extend: state.shift_mask?)
           else
-            plain_key_pressed(keyval)
+            false
           end
         end
-      end
-    end
-
-    def plain_key_pressed(keyval)
-      case keyval
-      when Gdk::Keyval::KEY_Tab then insert_indent
-      when Gdk::Keyval::KEY_Return, Gdk::Keyval::KEY_KP_Enter then insert_newline_with_indent
-      else false
       end
     end
 
@@ -303,11 +291,11 @@ class EditorSourceView < Gtk::TextView
       end
     end
 
-    # The font and the line height reach a GtkTextView through CSS, which is
-    # also how upstream applies them.
+    # The font and the line height reach a GtkSourceView through CSS, which is
+    # also how upstream applies them. Tab width, indent width and auto-indent
+    # are GtkSource::View's own properties now, not CSS.
     def update_css
       css_provider.load(data: "textview.#{css_class}{#{font_css}line-height:#{@line_height};}")
-      update_tab_stops
     end
 
     def font_css
@@ -331,43 +319,6 @@ class EditorSourceView < Gtk::TextView
     def base_font_size
       size = @font_desc&.size.to_i / Pango::SCALE
       size.positive? ? size : DEFAULT_FONT_SIZE
-    end
-
-    # A tab stop every tab_width characters wide, measured in the view's own
-    # font by laying out that many spaces.
-    def update_tab_stops
-      create_pango_layout(' ' * @tab_width).size.first.then do |width|
-        if width.positive?
-          self.tabs = Pango::TabArray.new(1, false).tap { |tabs| tabs.set_tab(0, :left, width) }
-        end
-      end
-    end
-
-    def insert_indent
-      if @insert_spaces_instead_of_tabs
-        buffer.insert_at_cursor(' ' * effective_indent_width)
-        true
-      else
-        false
-      end
-    end
-
-    def insert_newline_with_indent
-      if @auto_indent
-        buffer.insert_at_cursor("\n#{current_indentation}")
-        scroll_to_insert
-        true
-      else
-        false
-      end
-    end
-
-    def current_indentation
-      buffer.get_iter_at(offset: buffer.cursor_position).then do |iter|
-        buffer.get_iter_at(line: iter.line).then do |start|
-          buffer.get_text(start, iter, true)[/\A[ \t]*/]
-        end
-      end
     end
 
     # The bounds of the current line, or of every line an existing selection

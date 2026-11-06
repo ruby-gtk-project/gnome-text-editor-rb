@@ -3,6 +3,7 @@
 require 'fileutils'
 require 'securerandom'
 require 'adwaita'
+require 'gtksourceview5'
 require_relative 'editor_buffer_monitor'
 require_relative 'editor_document_statistics'
 require_relative 'editor_encoding_model'
@@ -15,22 +16,19 @@ require_relative 'editor_newline_model'
 # Ported from upstream's src/editor-document.c, with the line-splitting helper
 # from src/line-reader-private.h folded in — Ruby's String#each_line is the
 # same thing. Upstream derives from GtkSourceBuffer and drives loading and
-# saving through GtkSourceFileLoader and GtkSourceFileSaver; there is no
-# GtkSourceView in this port, so the class derives from GtkTextBuffer and the
-# loader and saver are the Gio calls those classes wrap, with the encoding
-# detection and newline conversion done by EditorEncodingModel and
-# EditorNewlineModel. Syntax highlighting, spell checking and the GtkSource
-# style scheme have no counterpart here and are not part of this class.
-class EditorDocument < Gtk::TextBuffer
+# saving through GtkSourceFileLoader and GtkSourceFileSaver; this port derives
+# from GtkSource::Buffer too — the gtksourceview5 gem — so syntax highlighting
+# and the style scheme come from the buffer itself. The load and save paths
+# stay the plain Gio calls, with encoding detection and newline conversion
+# done by EditorEncodingModel and EditorNewlineModel, because upstream's own
+# loader and saver exist mainly to run off the main thread, which this port
+# does not need.
+class EditorDocument < GtkSource::Buffer
   type_register
 
-  # Upstream's cursor-moved comes from GtkSourceBuffer; the rest are its own.
-  define_signal(
-    'cursor_moved',
-    GLib::Signal::RUN_LAST,
-    nil,
-    nil,
-  )
+  # Upstream's cursor-moved comes from GtkSourceBuffer, and so does this
+  # port's now that the class derives from the real thing — no define_signal
+  # for it, just a connection in #connect_buffer_signals. The rest are its own.
   define_signal(
     'cursor_jumped',
     GLib::Signal::RUN_LAST,
@@ -70,66 +68,6 @@ class EditorDocument < Gtk::TextBuffer
 
   APP_ID = 'org.rubygtkproject.GnomeTextEditor'
 
-  # Upstream asks GtkSourceLanguageManager to guess a GtkSourceLanguage from
-  # the file's name and content type, and that language drives both syntax
-  # highlighting and the per-language settings defaults. There is no
-  # GtkSourceView in this port, so a document's language is only the
-  # identifier the settings providers key on — EditorPageDefaults and the
-  # modelines — and it is guessed from the file's name with the two tables
-  # below, whose ids are GtkSourceView's own.
-  LANGUAGE_BY_BASENAME = {
-    '.bashrc'           => 'sh',
-    '.profile'          => 'sh',
-    '.zshrc'            => 'sh',
-    'CMakeLists.txt'    => 'cmake',
-    'Dockerfile'        => 'docker',
-    'Gemfile'           => 'ruby',
-    'GNUmakefile'       => 'makefile',
-    'Makefile'          => 'makefile',
-    'Rakefile'          => 'ruby',
-    'makefile'          => 'makefile',
-    'meson.build'       => 'meson',
-    'meson_options.txt' => 'meson',
-  }.freeze
-
-  LANGUAGE_BY_EXTENSION = {
-    'c'        => 'c',
-    'cc'       => 'cpp',
-    'cpp'      => 'cpp',
-    'cs'       => 'c-sharp',
-    'css'      => 'css',
-    'cxx'      => 'cpp',
-    'diff'     => 'diff',
-    'go'       => 'go',
-    'h'        => 'chdr',
-    'hh'       => 'cpphdr',
-    'hpp'      => 'cpphdr',
-    'htm'      => 'html',
-    'html'     => 'html',
-    'ini'      => 'ini',
-    'java'     => 'java',
-    'js'       => 'js',
-    'json'     => 'json',
-    'lua'      => 'lua',
-    'md'       => 'markdown',
-    'markdown' => 'markdown',
-    'patch'    => 'diff',
-    'php'      => 'php',
-    'pl'       => 'perl',
-    'py'       => 'python3',
-    'rb'       => 'ruby',
-    'rs'       => 'rust',
-    'sh'       => 'sh',
-    'sql'      => 'sql',
-    'toml'     => 'toml',
-    'ts'       => 'typescript',
-    'vala'     => 'vala',
-    'vapi'     => 'vala',
-    'xml'      => 'xml',
-    'yaml'     => 'yaml',
-    'yml'      => 'yaml',
-  }.freeze
-
   # Upstream's TITLE_MAX_LEN and TITLE_LAST_WORD_POS: a draft's title is the
   # first hundred characters of its text, cut at a word boundary if one turns
   # up in the first twenty.
@@ -166,10 +104,12 @@ class EditorDocument < Gtk::TextBuffer
     @error_message = nil
     @language_id = nil
     @language_id_overridden = false
+    @guess_content_type = nil
     @monitor = EditorBufferMonitor.new { mark_externally_modified }
     @monitor.file = @file
 
     connect_buffer_signals
+    sync_language
   end
 
   attr_reader :file, :draft_id, :encoding, :newline, :busy_progress, :error_message
@@ -230,7 +170,8 @@ class EditorDocument < Gtk::TextBuffer
   end
 
   # The language this document is written in, as a GtkSourceView language id:
-  # what a modeline said it is, or the guess from the file's name.
+  # what a modeline said it is, or GtkSourceLanguageManager's guess from the
+  # file's name and content.
   def language_id
     if @language_id_overridden
       @language_id
@@ -239,12 +180,14 @@ class EditorDocument < Gtk::TextBuffer
     end
   end
 
-  # What a modeline asks for, which is where upstream sets the buffer's
-  # language too; nil means no language at all.
+  # What a modeline asks for, or the Language dialog's choice — upstream sets
+  # the buffer's language here too, which is what drives syntax highlighting;
+  # nil means no language, and plain text, at all.
   def language_id=(language_id)
     (language_id != self.language_id).then do |changed|
       @language_id = language_id
       @language_id_overridden = true
+      self.language = language_id && GtkSource::LanguageManager.default.get_language(language_id)
 
       if changed
         signal_emit('language_changed')
@@ -298,6 +241,8 @@ class EditorDocument < Gtk::TextBuffer
         read_bytes(file).then do |bytes|
           apply_loaded_text(bytes, encoding)
           query_readonly(file)
+          @guess_content_type = query_content_type(file)
+          sync_language
           @monitor.etag = query_etag(file)
           @monitor.failed = false
           @monitor.reset
@@ -337,6 +282,8 @@ class EditorDocument < Gtk::TextBuffer
         @file = file
 
         if moved
+          @guess_content_type = nil
+          sync_language
           signal_emit('language_changed')
         end
       end
@@ -513,7 +460,8 @@ class EditorDocument < Gtk::TextBuffer
 
   # Default handlers for the signals this class defines. GLib looks these up
   # by name when the signal is emitted, so each defined signal needs one.
-  def signal_do_cursor_moved = nil
+  # "cursor-moved" is not here: it is GtkSourceBuffer's own signal now, not
+  # one define_signal added.
   def signal_do_cursor_jumped = nil
   def signal_do_title_changed = nil
   def signal_do_busy_changed = nil
@@ -523,21 +471,28 @@ class EditorDocument < Gtk::TextBuffer
 
   private
 
-    # GtkSourceLanguageManager's guess, as far as the file's name takes it.
+    # GtkSourceLanguageManager's guess from the file's name and, once loaded,
+    # its content — the same two-argument guess upstream makes.
     def guessed_language_id
       @file&.then do |file|
-        File.basename(file.parse_name).then do |basename|
-          LANGUAGE_BY_BASENAME[basename] ||
-            LANGUAGE_BY_EXTENSION[File.extname(basename).delete_prefix('.').downcase]
-        end
+        GtkSource::LanguageManager.default.guess_language(
+          File.basename(file.parse_name),
+          @guess_content_type,
+        )&.id
       end
+    end
+
+    # Keeps the buffer's actual GtkSource::Language, which drives syntax
+    # highlighting, in step with #language_id whenever the guess could have
+    # moved: a fresh load, or a save under a new name.
+    def sync_language
+      language_id.then { |id| self.language = id && GtkSource::LanguageManager.default.get_language(id) }
     end
 
     def statistics_listeners = @statistics_listeners ||= []
 
     def connect_buffer_signals
-      signal_connect('notify::cursor-position') do
-        signal_emit('cursor_moved')
+      signal_connect('cursor-moved') do
         unless @editing
           signal_emit('cursor_jumped')
         end
@@ -641,6 +596,12 @@ class EditorDocument < Gtk::TextBuffer
 
     def query_etag(file)
       file.query_info(ETAG_ATTRIBUTE, :none).etag
+    rescue StandardError
+      nil
+    end
+
+    def query_content_type(file)
+      file.query_info('standard::content-type', :none).content_type
     rescue StandardError
       nil
     end

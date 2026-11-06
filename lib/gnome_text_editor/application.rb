@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require 'gtksourceview5'
 require_relative '../application_actions'
 require_relative '../editor_document'
 require_relative '../editor_page'
@@ -35,6 +36,7 @@ module GnomeTextEditor
         app.signal_connect('startup') do
           load_stylesheet
           load_icons
+          load_style_schemes
           apply_style_variant
           settings.on_changed('style-variant') { apply_style_variant }
           settings.on_changed('line-height') { apply_line_height }
@@ -140,12 +142,34 @@ module GnomeTextEditor
         end
       end
 
+      # The five style schemes upstream bundles as src/styles/*.xml ship beside
+      # lib/ as data/styles, which is where the flake installs them too.
+      # GtkSourceStyleSchemeManager reads every "*.xml" in a search path
+      # directory, so adding the directory is the whole registration.
+      def load_style_schemes
+        styles_path.then do |path|
+          if Dir.exist?(path)
+            manager = GtkSource::StyleSchemeManager.default
+            manager.append_search_path(path)
+            manager.force_rescan
+          end
+        end
+      end
+
       def icons_path = File.join(
         __dir__,
         '..',
         '..',
         'data',
         'icons',
+      )
+
+      def styles_path = File.join(
+        __dir__,
+        '..',
+        '..',
+        'data',
+        'styles',
       )
 
       def css_path = File.join(

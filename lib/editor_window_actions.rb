@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require 'gtksourceview5'
 require_relative 'editor_encoding_dialog'
+require_relative 'editor_language_dialog'
 require_relative 'editor_preferences_dialog'
+require_relative 'editor_print_operation'
 require_relative 'editor_save_changes_dialog'
 
 # EditorWindowActions installs every action the window answers: the session's
@@ -13,9 +16,6 @@ require_relative 'editor_save_changes_dialog'
 # as class actions and builds its "settings" group from
 # g_settings_create_action for nine keys; this port uses GSimpleActionGroups
 # and EditorSettings#create_action, which is the same action for either store.
-# page.print and page.change-language are not here: printing needs
-# GtkPrintOperation driving a GtkSourceView, and there is no language to
-# choose without GtkSourceView.
 class EditorWindowActions
   # The keys upstream exposes as the window's "settings" action group.
   SETTING_KEYS = %w[
@@ -55,9 +55,9 @@ class EditorWindowActions
         window_actions.lookup_action(name).enabled = has_page
       end
 
-      %w[save-as discard-changes begin-search begin-replace change-encoding copy-all
+      %w[save-as discard-changes begin-search begin-replace change-encoding change-language copy-all
          move-left move-right move-to-new-window zoom-in zoom-out zoom-one
-         show-goto-line goto-line
+         show-goto-line goto-line print
 ].each do |name|
         page_actions.lookup_action(name).enabled = has_page
       end
@@ -127,6 +127,8 @@ class EditorWindowActions
       add(group, 'begin-search') { with_page { |page| page.begin_search(replace: false) } }
       add(group, 'begin-replace') { with_page { |page| page.begin_search(replace: true) } }
       add(group, 'change-encoding') { change_encoding }
+      add(group, 'change-language') { change_language }
+      add(group, 'print') { print_page }
       add(group, 'zoom-in') { with_page(&:zoom_in) }
       add(group, 'zoom-out') { with_page(&:zoom_out) }
       add(group, 'zoom-one') { with_page(&:zoom_one) }
@@ -254,6 +256,18 @@ class EditorWindowActions
       with_page do |page|
         EditorEncodingDialog.new(page.document).build.present(@window)
       end
+    end
+
+    def change_language
+      with_page do |page|
+        current = page.document.language_id&.then { |id| GtkSource::LanguageManager.default.get_language(id) }
+        EditorLanguageDialog.new(current) { |language| page.document.language_id = language&.id }
+                            .build.present(@window)
+      end
+    end
+
+    def print_page
+      with_page { |page| EditorPrintOperation.new(page.document, page.view, @window.settings).run(@window) }
     end
 
     def show_preferences

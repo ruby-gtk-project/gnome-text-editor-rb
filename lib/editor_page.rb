@@ -8,6 +8,7 @@ require_relative 'editor_page_settings'
 require_relative 'editor_path'
 require_relative 'editor_position_label'
 require_relative 'editor_search_bar'
+require_relative 'editor_source_map'
 require_relative 'editor_source_view'
 require_relative 'editor_utils'
 
@@ -17,10 +18,9 @@ require_relative 'editor_utils'
 # Ported from upstream's src/editor-page.c and src/editor-page.ui. Upstream
 # notifies the window of title, subtitle and modified changes through GObject
 # properties; this port calls listeners registered with #on_changed, which is
-# the same notification with less ceremony. The overview map from
-# src/editor-source-map.c is not part of this port — it renders a second
-# GtkSourceView — so the horizontal box upstream puts the view and the map in
-# holds only the view.
+# the same notification with less ceremony. The horizontal box upstream puts
+# the view and the overview map in holds both here too, the map built from
+# EditorSourceMap and shown only when the "show-map" setting is on.
 class EditorPage < Gtk::Box
   def initialize(document, settings)
     super(:vertical, 0)
@@ -53,6 +53,7 @@ class EditorPage < Gtk::Box
 
           view_box.append(scroller)
           scroller.child = source_view.build
+          view_box.append(source_map.build)
         end
 
         view.add_bottom_bar(bottom_box)
@@ -79,6 +80,11 @@ class EditorPage < Gtk::Box
       page_settings.on_changed { |changed| apply_settings(changed) }
       page_settings.build
       apply_settings(EditorPageSettings::KEYS)
+
+      # "spellcheck" is upstream's own GSetting, outside the per-document
+      # settings stack — the one it applies straight from EditorSettings.
+      source_view.spellcheck = @settings.spellcheck?
+      @settings.on_changed('spellcheck') { source_view.spellcheck = @settings.spellcheck? }
 
       connect_document
       search_bar.bind_document(@document)
@@ -243,6 +249,13 @@ class EditorPage < Gtk::Box
 
   def source_view = @source_view ||= EditorSourceView.new(@document)
 
+  def source_map
+    @source_map ||= EditorSourceMap.new.tap do |map|
+      map.visible = false
+      map.view = source_view
+    end
+  end
+
   # The settings this document is edited under: the user's preferences, under
   # whatever its language, its .editorconfig and its modelines have to say.
   def page_settings = @page_settings ||= EditorPageSettings.new(@document, settings: @settings)
@@ -338,10 +351,8 @@ class EditorPage < Gtk::Box
     end
   end
 
-  # The settings the port's view can honour: the font, the wrap mode and the
-  # indentation. Upstream binds the others — line numbers, the right margin,
-  # the background grid, the overview map, the style scheme and bracket
-  # matching — to GtkSourceView properties, which have no counterpart here.
+  # Every setting upstream binds straight to GtkSourceView and GtkSourceBuffer
+  # properties, now that this port's view and buffer are the real things.
   def apply_settings(changed)
     tap do
       changed.each do |key|
@@ -353,6 +364,16 @@ class EditorPage < Gtk::Box
         when :auto_indent then source_view.auto_indent = page_settings.auto_indent
         when :insert_spaces_instead_of_tabs
           source_view.insert_spaces_instead_of_tabs = page_settings.insert_spaces_instead_of_tabs
+        when :show_line_numbers then source_view.show_line_numbers = page_settings.show_line_numbers
+        when :show_right_margin then source_view.show_right_margin = page_settings.show_right_margin
+        when :right_margin_position then source_view.right_margin_position = page_settings.right_margin_position
+        when :show_grid then apply_background_pattern
+        when :show_map then source_map.visible = page_settings.show_map
+        when :highlight_current_line
+          source_view.highlight_current_line = page_settings.highlight_current_line
+        when :highlight_matching_brackets
+          @document.highlight_matching_brackets = page_settings.highlight_matching_brackets
+        when :style_scheme then apply_style_scheme
         end
       end
     end
@@ -370,6 +391,21 @@ class EditorPage < Gtk::Box
           source_view.font_desc = nil
         end
       end
+    end
+
+    def apply_background_pattern
+      if page_settings.show_grid
+        source_view.background_pattern = :grid
+      else
+        source_view.background_pattern = :none
+      end
+    end
+
+    def apply_style_scheme
+      page_settings.style_scheme.then do |id|
+        @document.style_scheme = id && GtkSource::StyleSchemeManager.default.get_scheme(id)
+      end
+      update_state
     end
 
     def clipboard = Gdk::Display.default.clipboard
