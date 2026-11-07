@@ -9,27 +9,29 @@ Upstream tree: 300 files, 100 under `src/`, 17 `.ui` templates + 1 standalone
 `.ui` (shortcuts), 1 GSettings schema (26 keys), 1 GResource manifest,
 59 locales in `po/`.
 
-**State of the port, refreshed against `lib/` as of commit `0837243` (the
-original round-1 survey below is superseded; its "absent" calls for the
-settings-provider stack, the focus chain, the word/paragraph iterator and the
-desktop/metainfo/D-Bus/icon data files are now wrong — those have since
-landed).** `lib/` holds 53 Ruby files. Present beyond round 1: the full
-settings-provider stack (`editor_page_settings.rb`,
-`editor_page_settings_provider.rb`, `editor_page_gsettings.rb`,
-`editor_page_defaults.rb`, `editor_page_editorconfig.rb`,
-`editor_modeline_settings_provider.rb`, plus `data/language-mappings`),
-`editor_focus_chain.rb`, `editor_source_iter.rb`, and the desktop entry,
-AppStream metainfo, D-Bus service file and the four bundled symbolic icons
-plus the app's own hicolor icon under `data/`.
+**State of the port, refreshed a second time against `lib/` as of commit
+`16179ac` ("Parity reports") — the round-1 survey and the first refresh
+(against commit `0837243`) are both superseded below; their remaining
+"absent" calls for the source map, the language dialog/row, the 5 bundled
+style schemes, window recoloring and the print operation are now wrong —
+all of those landed in commit `f6b3c1a`, which also switched
+`editor_source_view.rb` from `Gtk::TextView` onto `GtkSource::View`.** `lib/`
+now holds 60 Ruby files (up from 53 at the first refresh, 45 at round 1;
+`find lib -name '*.rb' | wc -l`, including `gnome_text_editor.rb`,
+`gnome_text_editor/application.rb` and `gnome/text/editor/rb/version.rb`,
+which are gem/entry-point plumbing rather than ported components).
+Present beyond the first refresh: `editor_source_map.rb`,
+`editor_language_dialog.rb`, `editor_language_row.rb`,
+`editor_recoloring.rb`, `editor_print_operation.rb`, the 5 bundled style
+schemes under `data/styles/`, and libspelling/gtksourceview5 wiring in the
+gemspec, `nix/Gemfile` and `flake.nix` (verified in this refresh: `require
+"libspelling"` loads and exposes 8 constants under `Spelling`).
 
-Still absent, and now for one reason only — they need `GtkSource::View`,
-where the port builds over plain `Gtk::TextView`: the source map
-(`editor_source_map.rb`), the language dialog and language row
-(`editor_language_dialog.rb`, `editor_language_row.rb`), the five bundled
-style schemes and `GtkSource::StyleSchemeManager` registration, window
-recoloring (`editor_recoloring.rb`), Vim keybindings
-(`editor_page_vim.rb`) and the print operation (`editor_print_operation.rb`).
-Also still absent: `po/` and any gettext call.
+Still absent: **`editor_page_vim.rb`** (Vim keybinding mode,
+`src/editor-page-vim.c` — nobody has written this; it is the only remaining
+component-level gap in the whole app) and **`po/`** plus any gettext call
+(the translation catalogue has not been started — that is the
+`translation-parity` skill's job).
 
 A note on the mapping: the house style is one upstream source file to one
 `lib/<thing>.rb`, but upstream splits almost every component across a `.c`, a
@@ -203,7 +205,7 @@ bracket matching, and the `editor` CSS class. Status: **present** — lib/editor
 | `Gtk.Widget` (template root) | 1 | — | — | — |
 | `GtkSource.Map` | 1 | — | — | id `map`, binds its font and view |
 
-Status: **absent** — lib/editor_source_map.rb not written.
+Status: **present** — lib/editor_source_map.rb (landed in commit `f6b3c1a`, after this table row was first written; verified against the current file tree, not re-tabulated widget-by-widget in this pass).
 
 ### `src/editor-position-label.c`, `src/editor-position-label.ui` → `lib/editor_position_label.rb`
 
@@ -396,7 +398,7 @@ Document-type picker, reached from `page.change-language`.
 | `Gtk.ListBox` | 2 | `content` | — | `recent_list_box`, `list_box` — repeaters over languages, rows are `EditorLanguageRow` |
 | `Adw.StatusPage` | 1 | — | — | `edit-find-symbolic`, "No Results Found" — the empty state |
 
-Status: **absent** — lib/editor_language_dialog.rb not written.
+Status: **present** — lib/editor_language_dialog.rb (landed in commit `f6b3c1a`; verified against the current file tree, not re-tabulated widget-by-widget in this pass).
 
 ### `src/editor-language-row.c`, `src/editor-language-row.ui` → `lib/editor_language_row.rb`
 
@@ -405,7 +407,7 @@ Status: **absent** — lib/editor_language_dialog.rb not written.
 | `Adw.ActionRow` (template root) | 1 | — | — | title is the language name |
 | `Gtk.Image` | 1 | — | — | id `image`, `object-select-symbolic`, shown when selected |
 
-Status: **absent** — lib/editor_language_row.rb not written.
+Status: **present** — lib/editor_language_row.rb (landed in commit `f6b3c1a`; verified against the current file tree, not re-tabulated widget-by-widget in this pass).
 
 ### `src/editor-encoding-dialog.c`, `src/editor-encoding-dialog.ui` → `lib/editor_encoding_dialog.rb`
 
@@ -491,9 +493,9 @@ is one upstream `.c`/`.h` pair to one `lib/*.rb`.
 | `src/defaults/editor-page-defaults.c` | `lib/editor_page_defaults.rb` | built-in per-language defaults provider | yes |
 | `src/editorconfig/editor-page-editorconfig.c`, `editorconfig-glib.c` | `lib/editor_page_editorconfig.rb` | `.editorconfig` settings provider | yes |
 | `src/modelines/editor-modeline-settings-provider.c`, `modeline-parser.c` | `lib/editor_modeline_settings_provider.rb` | vim/emacs modeline provider; `modelines/language-mappings` is data | yes (`data/language-mappings`) |
-| `src/editor-page-vim.c` | `lib/editor_page_vim.rb` | vim keybinding mode (`keybindings` GSetting), drives the statusbar command text | no |
-| `src/editor-print-operation.c` | `lib/editor_print_operation.rb` | `Gtk.PrintOperation` subclass behind `page.print`, uses `styles/printing.xml` | no |
-| `src/editor-recoloring.c` | `lib/editor_recoloring.rb` | tints the window chrome from the style scheme (`recolor-window` GSetting) | no |
+| `src/editor-page-vim.c` | `lib/editor_page_vim.rb` | vim keybinding mode (`keybindings` GSetting), drives the statusbar command text | no — still not written; this is the only remaining component-level gap in sections 1–6 |
+| `src/editor-print-operation.c` | `lib/editor_print_operation.rb` | `Gtk.PrintOperation` subclass behind `page.print`, uses `styles/printing.xml` | yes (landed in commit `f6b3c1a`; verified present and calling `GtkSource::StyleSchemeManager.default.get_scheme('printing')`) |
+| `src/editor-recoloring.c` | `lib/editor_recoloring.rb` | tints the window chrome from the style scheme (`recolor-window` GSetting) | yes (landed in commit `f6b3c1a`; verified present and calling `GtkSource::StyleSchemeManager`) |
 | `src/editor-joined-menu.c` | `lib/editor_joined_menu.rb` | concatenates `GMenuModel`s for the primary menu | yes |
 | `src/editor-file-manager.c` | `lib/editor_file_manager.rb` | "Open in File Manager" / show-in-folder | yes |
 | `src/editor-path.c` | `lib/editor_path.rb` | home-relative path shortening for titles and rows | yes |
@@ -516,7 +518,7 @@ Non-UI / build-only, no port target: `src/editor-types.h`,
 | Upstream | → port | What | Present |
 |---|---|---|---|
 | `src/style.css` | `data/style.css` loaded by a `Gtk::CssProvider` in `lib/gnome_text_editor/application.rb` | classes `window.org-gnome-TextEditor`, `dialog.preferences`, `.language-dialog`, `box.statusbar`, `row.location.property`, `page`, `popover`, plus `.theme-selector`, `.large-button`, `.editor`, `.property`, `.open-popover`, `.searchbar` | yes |
-| `src/styles/{builder,builder-dark,peninsula,peninsula-dark,printing}.xml` | ship as data, register with `GtkSource::StyleSchemeManager` | 5 bundled style schemes | no |
+| `src/styles/{builder,builder-dark,peninsula,peninsula-dark,printing}.xml` | ship as data, register with `GtkSource::StyleSchemeManager` | 5 bundled style schemes | yes (present under `data/styles/`, registered from `lib/editor_page.rb`, `lib/editor_print_operation.rb` and `lib/editor_recoloring.rb`) |
 | `data/org.gnome.TextEditor.gschema.xml` | `data/schemas/org.rubygtkproject.GnomeTextEditor.gschema.xml`, compiled and read through `lib/editor_settings.rb` | 26 keys: auto-save-delay, style-variant, indent-style, auto-indent, tab-width, indent-width, show-line-numbers, show-right-margin, right-margin-position, show-map, show-grid, highlight-current-line, wrap-text, use-system-font, custom-font, style-scheme, discover-settings, spellcheck, restore-session, recolor-window, keybindings, last-save-directory, draw-spaces (flags), enable-snippets, line-height, highlight-matching-brackets | yes (all 26 keys, renamed to the fork's app id) |
 | `src/org.gnome.TextEditor.gresource.xml` | not needed — the Ruby port has no `.ui` files by design | the 17 templates it lists are the components above | n/a |
 | `data/icons/hicolor/scalable/actions/*.svg` | ship as data, add to the icon theme search path | `document-admin-symbolic`, `document-modified-symbolic`, `external-link-symbolic`, `info-outline-symbolic` — referenced by the info bar and the properties button | yes |
@@ -529,41 +531,45 @@ Non-UI / build-only, no port target: `src/editor-types.h`,
 ## Totals (refreshed)
 
 - 17 `.ui` templates + 1 standalone `.ui` → 18 declarative component units.
-- 29 port-target component files with widgets (sections 1–5): **26 present, 3 absent**
-  (`editor_source_map.rb`, `editor_language_dialog.rb`, `editor_language_row.rb`)
-  — unchanged from round 1, all three gated on `GtkSource::View`.
-- 27 model/support files (section 6): **24 present, 3 absent**
-  (`editor_page_vim.rb`, `editor_print_operation.rb`, `editor_recoloring.rb`),
-  1 folded in (`editor-frame-source.c` → `editor_animation.rb`), plus the
-  port-only `editor_settings.rb`. The settings-provider stack, the focus
-  chain and the source iterator — all called absent in round 1 — are now
-  present (`lib/` grew from 45 to 53 files between that survey and commit
-  `0837243`).
-- 7 resource groups (section 7): **4 present** (`data/style.css`, the
-  GSettings schema, the desktop/metainfo/D-Bus files, the symbolic icons),
-  2 absent (`po/`, the 5 bundled style schemes), 1 n/a.
+- 29 port-target component files with widgets (sections 1–5): **29 present, 0 absent.**
+  `editor_source_map.rb`, `editor_language_dialog.rb` and `editor_language_row.rb`
+  — called absent above and in round 1 — landed in commit `f6b3c1a`, which also
+  switched `editor_source_view.rb` onto `GtkSource::View`. Verified present
+  against the current `lib/` tree in this refresh; not re-tabulated
+  widget-by-widget (that is `component-parity`'s job, not re-done here).
+- 27 model/support files (section 6): **26 present, 1 absent**
+  (`editor_page_vim.rb` — Vim keybinding mode has not been written by anyone),
+  1 folded in (`editor-frame-source.c` → `editor_animation.rb`, confirmed in
+  this refresh to use a real `add_tick_callback`/frame-clock loop, not a stub),
+  plus the port-only `editor_settings.rb`. `editor_print_operation.rb` and
+  `editor_recoloring.rb` — called absent above and in round 1 — also landed
+  in commit `f6b3c1a`.
+- 7 resource groups (section 7): **6 present** (`data/style.css`, the 5
+  bundled style schemes under `data/styles/`, the GSettings schema, the
+  desktop/metainfo/D-Bus files, the symbolic icons), 1 absent (`po/`), 1 n/a.
 - Actions to install: 7 app, 13 win, 20 page, 5 search, 3 search-options,
   1 settings, 1 session.
 - 48 keyboard shortcuts in 10 sections.
 
-The remaining gap is one theme: everything left — the source map, the
-language picker, the style schemes, window recoloring, Vim mode and the
-print operation — depends on swapping `editor_source_view.rb` from
-`Gtk::TextView` to `GtkSource::View`, plus the separate, independent
-translation catalogue (`po/`).
+The `GtkSource::View` swap that blocked the source map, language picker,
+style schemes, window recoloring and the print operation is done (commit
+`f6b3c1a`). Two things are left in the whole app, and neither depends on the
+other:
+
+1. **`editor_page_vim.rb`** — Vim keybinding mode (`src/editor-page-vim.c`).
+   Nobody has written this yet; it is the single remaining component-level
+   gap.
+2. **`po/` + gettext calls throughout `lib/`** — the translation catalogue
+   has not been started. This is the `translation-parity` skill's job, not
+   touched in this component survey.
 
 ## Suggested port order (remaining work only)
 
-Round 1 (steps 1–10 of the original plan) and the settings-provider stack,
-focus chain and source iterator (step 11's first half) are done. What is left:
+Round 1 (steps 1–10 of the original plan), the settings-provider stack,
+focus chain and source iterator (step 11's first half), and the
+`GtkSource::View` swap with everything it unblocked (the source map, the
+language dialog/row, the 5 style schemes, window recoloring, and the print
+operation — all landed in commit `f6b3c1a`) are done. What is left:
 
-1. Swap `editor_source_view.rb` onto `GtkSource::View` — this unblocks
-   everything below.
-2. `editor_source_map.rb` (needs `GtkSource::Map`).
-3. The 5 bundled style schemes as data + `GtkSource::StyleSchemeManager`
-   registration, then `editor_language_dialog.rb` + `editor_language_row.rb`
-   (document-type picker, `page.change-language`).
-4. `editor_recoloring.rb` (tints window chrome from the active style scheme).
-5. `editor_page_vim.rb` (Vim keybinding mode, drives the statusbar command text).
-6. `editor_print_operation.rb` (`Gtk::PrintOperation`, `page.print`, `styles/printing.xml`).
-7. `po/` + gettext calls throughout `lib/` — independent of the above, can run in parallel.
+1. `editor_page_vim.rb` (Vim keybinding mode, drives the statusbar command text).
+2. `po/` + gettext calls throughout `lib/` — independent of the above, can run in parallel.
