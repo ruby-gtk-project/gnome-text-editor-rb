@@ -90,6 +90,14 @@ class EditorPage < Gtk::Box
       search_bar.bind_document(@document)
       search_bar.on_state_changed { @actions.update }
       goto_line_entry.signal_connect('activate') { goto_line }
+
+      # Without this, the header bar's zoom percentage button never follows
+      # the zoom buttons, the Ctrl+scroll gesture or the Ctrl+plus/minus
+      # shortcuts: EditorSourceView#zoom only calls its own @zoom_listeners,
+      # and nothing was connecting one, so the button's label only happened
+      # to look right after some unrelated update_state (switching tabs,
+      # opening a file) coincidentally repainted it.
+      source_view.on_zoom_changed { @changed_listeners.each { |listener| listener.call(self) } }
       info_bar.on_retry { @document.load { update_state } }
       info_bar.on_use_admin { @document.use_admin }
       info_bar.on_discard { discard_changes }

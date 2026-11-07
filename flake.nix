@@ -228,6 +228,12 @@
             # carries one it can start itself: `xvfb-run ruby exe/<app>` both
             # launches the app and is how test/drive_*.rb is run.
             pkgs.xvfb-run
+            # Forges the one real key press no Ruby call can synthesize
+            # (gtk_event_controller_key_forward asserts on a NULL current
+            # event): test/drive_window.rb uses it to prove a window-level
+            # keyboard shortcut (F11, Alt+W) actually fires, not just the
+            # method its handler calls.
+            pkgs.xdotool
             pkgs.gsettings-desktop-schemas
             pkgs.adwaita-icon-theme
           ] ++ gtkStack;
