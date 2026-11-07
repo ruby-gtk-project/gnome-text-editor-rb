@@ -1,104 +1,126 @@
 # Test parity — gnome-text-editor-rb
 
-Run with the `test-parity` skill, 2026-11-07.
+Run with the `test-parity` skill, 2026-11-07 (refresh 2).
 
 | | |
 |---|---|
 | Upstream | `main` @ `51a092b` |
-| Port | `ruby` @ `8090c38` |
+| Port | `ruby` @ `3546574` |
 | Upstream tests | 0 |
 | Ported | 0 |
 | Gaps | 0 |
-| Test command | none configured — `rake spec` runs an empty `spec/` (see below) |
+| Test command | none configured — `rake spec` runs an empty `spec/` (unchanged, see below) |
 
-## Upstream has no test suite
+## Upstream has no test suite (unchanged)
 
 ```
 $ git ls-tree -r --name-only origin/main | grep -iE "test"
 .gitlab-ci/test-msvc.bat
 ```
 
-One file, a CI batch script, not a test. Census of the worktree with
-`test-census.sh` returns 0 rows; no `tests/` or `test/` directory, no
-`meson.build` test target, no `g_test_add_func`, no `unittest`/`pytest`.
-Verified, not assumed.
+One file, a CI batch script, not a test. Test parity is 0/0 and is met
+trivially — restated from the prior run because it is still true, not
+because it is being used to paper over the rest of this report.
 
-**Test parity is 0/0 and is met trivially. The port therefore inherits no
-safety net** — every check that exists in this repo was written for the
-port and pins nothing upstream considered worth pinning. This is the
-finding, not a formality, and it is the reason the runtime-gate claim this
-audit was asked to treat skeptically ("drive_ok=true, 83 checks passed, 0
-failed, covering 26 components") is worth taking apart below: there is no
-inherited suite backing it, only three hand-written driver scripts.
+## The prior finding — the runtime gate's suite did not actually complete — is now fixed, and the fix is reproduced here, not assumed
 
-## What actually runs when asked to
+The last run of this skill reported that `test/drive_window.rb` segfaulted
+before printing its own tally, and that the "83 checks passed, 0 failed"
+runtime-gate claim it was handed could not be reproduced. This round's
+runtime gate is different — "104 checks passed, 0 failed, covering 26
+components" — and this time it **does** reproduce, run fresh in this
+session:
 
 ```
 $ nix develop --command xvfb-run -a ruby test/drive_editor.rb
 ...
-ALL OK
+ALL OK                               (13 check.call sites, all passed)
 $ nix develop --command xvfb-run -a ruby test/drive_page_settings.rb
 ...
-ALL OK
+ALL OK                               (8 check.call sites, all passed)
 $ nix develop --command xvfb-run -a ruby test/drive_window.rb
 ...
-test/drive_window.rb: [BUG] Segmentation fault at 0x0000000000000019
+83 of 83 checks passed
+DRIVE OK
 ```
-exit code **139**, run twice, both times. `drive_window.rb` does not finish.
-It does not print its own `GtkDriver::Session#report` tally
-(`"N of M checks passed"` / `DRIVE OK`) at all — the process dies before
-that line executes. Full detail and root cause (a `NoMethodError` in
-`lib/editor_settings.rb`'s GSettings-fallback boolean action, hit by the
-Alt+W wrap-text toggle step) is in `component-parity.md` and
-`accountability-ensurance.md`; this ledger's job is just to say plainly that
-**the claimed "83 checks passed, 0 failed" number cannot be reproduced by
-running the suite that is supposed to produce it.**
 
-Breaking down what each script actually proves when it runs:
+13 + 8 + 83 = **104**, matching the runtime gate's number exactly, for the
+first time across the three rounds this skill has now run. The crash
+(`lib/editor_settings.rb#boolean_action` calling `.get_boolean` on a value
+that was already a plain Ruby boolean) was fixed in commit `3546574`, and
+re-running the exact command that crashed last time, in the same
+schema-absent dev shell, now completes clean, twice. This round's gate
+claim is verified, not just repeated.
 
-| Script | `check(...)` call sites (grep) | Ran this session | Result |
+## What the number does not cover: the newly-landed Vim keybinding controller has zero check coverage
+
+`lib/editor_page_vim.rb` landed in commit `1f0d594`, between this report's
+prior run and this one. Grepping the three driver scripts for anything
+that exercises it:
+
+```
+$ grep -rn "vim" test/
+test/drive_page_settings.rb:94:  check.call('vim modeline beats the .editorconfig') do
+test/drive_page_settings.rb:95:    document.call(File.join(project, 'modeline.rb'), "# vim: set ts=5 sw=5 et tw=66:\nx = 1\n").then do |doc|
+```
+
+That one hit tests the **modeline parser** recognising a `# vim: ...`
+comment and setting the `keybindings` GSetting to `vim` as a side effect —
+it never drives a page with `keybindings` actually set to `vim` through the
+real settings path, never fires a key through the installed
+`Gtk::EventControllerKey`, never issues a `:wq`/`:q!` ex-command, and never
+checks the statusbar's command text (which `component-parity.md` finds is
+not wired at all). **Zero of the 104 passing checks exercise
+`EditorPageVim`'s own behaviour.** Per this audit's framing: a component no
+check exercises is unverified, not done, regardless of how clean the
+surrounding suite's numbers are. This is the gap this round's gate number,
+taken alone, hides — "104/104, DRIVE OK" is true and also says nothing
+about whether Vim mode works.
+
+## `spec/` is still an empty harness, not a suite (unchanged)
+
+```
+$ find spec test -type f
+spec/README.md
+spec/spec_helper.rb
+test/drive_editor.rb
+test/drive_page_settings.rb
+test/drive_window.rb
+test/gtk_driver.rb
+```
+
+Zero `*_spec.rb` files. `rake spec` would run zero examples. Restated from
+the prior run because nothing changed it — the RSpec harness
+(`.rspec`, `spec/spec_helper.rb`, the `kettle-test` wiring in the gemspec)
+is configured and has never run a single example. An RSpec harness existing
+is not RSpec tests existing.
+
+## Breakdown
+
+| Script | `check.call`/`check(` sites | Ran this session | Result |
 |---|---:|---|---|
-| `test/drive_editor.rb` | 12 (`check.call`) | yes | ALL OK, 12/12 |
-| `test/drive_page_settings.rb` | 8 (`check.call`) | yes | ALL OK, 8/8 |
-| `test/drive_window.rb` | 83 (`check(` via `GtkDriver`) | yes | **crashed before `report` ran — checks completed before the crash: ~9 of 83, by the step markers in stdout** |
+| `test/drive_editor.rb` | 13 | yes | ALL OK, 13/13 |
+| `test/drive_page_settings.rb` | 8 | yes | ALL OK, 8/8 |
+| `test/drive_window.rb` | 83 | yes | **83/83, DRIVE OK — completes clean this round** |
 
-12 + 8 + 83 = 103 declared check sites across the three scripts, not 83 — the
-83 figure in the runtime gate matches `drive_window.rb` alone, which is the
-one script that did not complete. Whatever produced "83 checks passed, 0
-failed, drive_ok=true" either ran in an environment where the compiled
-GSettings schema was present (masking the bug — see
-`component-parity.md`) or did not actually observe this run's crash. Either
-way, the number is not reproducible from a clean checkout of this branch
-today, and this report says so rather than repeating it.
-
-## Extra
-
-- `test/drive_editor.rb` — 12 checks: window build, file open, title
-  tracking, search, replace-all, save, properties panel, new draft, zoom,
-  fullscreen, recents, session state.
-- `test/drive_page_settings.rb` — 8 checks: language guessing, per-language
-  defaults, `.editorconfig` precedence, vim/emacs/kate modelines, per-document
-  override, word-boundary iteration.
-- `test/drive_window.rb` — up to 83 checks across window lifecycle, tab
-  management, shortcuts and settings actions; **currently cannot be run to
-  completion** (see above).
-- `spec/` — contains only `spec_helper.rb` and `spec/README.md` (harness
-  documentation for `kettle-test`). Zero `*_spec.rb` files exist. `rake spec`
-  would run zero examples. This is not a test suite with nothing to report;
-  it is a test framework with nothing wired into it, and it is worth stating
-  plainly rather than letting "an RSpec harness is configured" read as "there
-  are RSpec tests."
-
-None of the above is parity work — upstream pins nothing, so there is
-nothing to be at parity with — and none of it is free of findings either.
+One new observation from this run's full stdout, not previously reported:
+step `[31]` (`test/drive_window.rb`, the save-changes dialog) logs `shot
+10-save-changes failed: RuntimeError: widget produced no render node (not
+realised yet?)` — a screenshot capture failure inside the harness. It does
+not fail the step's own `check(...)` call (the dialog's state assertions
+pass regardless) and does not affect the 83/83 tally, but it means the
+save-changes dialog's screenshot evidence is missing from
+`tmp/shots/` while every other dialog's is present. Noted here rather than
+silently dropped, per this skill's own standard — a passing check and a
+missing piece of evidence for it are not the same thing.
 
 ## Rules check
 
-- Every row above is backed by a command actually run this session, not by
-  reading the driver scripts and assuming they pass.
-- The 0/0 upstream result is stated plainly, with the "no inherited safety
-  net" consequence spelled out, per the skill's explicit instruction not to
-  let a 0/0 report read as a silent pass.
-- The crash is reported as what it is — a check suite that does not
-  currently complete — rather than rounded up to "DRIVE OK" because two of
-  the three scripts did finish clean.
+- Every row above is backed by a command actually run this session, not
+  carried over from the prior report or read off the diff.
+- The runtime gate's "104 checks passed, 0 failed, covering 26 components"
+  claim is verified by reproducing the exact total from the three scripts'
+  own `check` call counts, not accepted because it sounds plausible.
+- The new Vim-controller coverage gap is reported plainly as "zero checks,"
+  not rounded up because the file exists and the surrounding suite is
+  green — green elsewhere is not evidence for an untouched component.

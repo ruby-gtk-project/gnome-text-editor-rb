@@ -1,12 +1,12 @@
 # Translation parity — gnome-text-editor-rb
 
-Run with the `translation-parity` skill, 2026-11-07, using the skill's own
-`catalogue.rb` and `--compare`.
+Run with the `translation-parity` skill, 2026-11-07 (refresh 2), using the
+skill's own `catalogue.rb` and `--compare`.
 
 | | |
 |---|---|
 | Upstream | `main` @ `51a092b` |
-| Port | `ruby` @ `8090c38` |
+| Port | `ruby` @ `3546574` |
 | Domain | `gnome-text-editor` (`domain_source: po/meson.build`, upstream side) |
 | Upstream messages | 289 |
 | Ported | 58 |
@@ -100,6 +100,20 @@ itself a gap wearing a justification. The port has 0 of 289 messages routed
 through any mechanism that could ever produce German, French, or any other
 of the 59 languages upstream already ships in the same repository, on the
 same files, today.
+
+## Refresh note (this round)
+
+Re-ran `catalogue.rb . --role port` against the current tree (`3546574`) to
+check whether anything moved since the prior run: `messages: 60,
+occurrences: 62, reused: 1` — identical to the numbers below. The only
+commits since the prior run (`1f0d594`, `3546574`) touch
+`lib/editor_page_vim.rb`, `lib/editor_page.rb` and `lib/editor_settings.rb`
+— no `data/` strings, no gettext calls, nothing the census would count.
+Confirmed by running the scan, not inferred from the diff. The full
+upstream-side `--compare` was not re-run (it requires scanning the full
+`origin/main` tree separately, unchanged in commit since the prior run, and
+the port-side identity above already shows nothing moved); the 289/58/231
+figures below stand.
 
 ## Rules check
 

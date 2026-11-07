@@ -1,126 +1,103 @@
 # Component parity — gnome-text-editor-rb
 
-Run with the `component-parity` skill, 2026-11-07.
+Run with the `component-parity` skill, 2026-11-07 (refresh 2).
 
 | | |
 |---|---|
 | Upstream | `origin/main` @ `51a092b` |
-| Port | `ruby` @ `8090c38` |
+| Port | `ruby` @ `3546574` |
 
-No `COMPONENT_PARITY.md` ledger exists on this branch. There is nothing to
-build on; this report is the first pass, not an update to a prior one.
+Builds on the prior pass (written against port commit `8090c38`, kept in
+this file's git history). That pass's headline finding — a settings action
+crashing the running app — and this pass's new finding — a real but
+narrower Vim statusbar gap — are both reported below.
 
-## Headline finding: a settings action crashes the running app
+## The settings-action crash is fixed; reproduced the fix, not just read it
 
-This is found on the behaviour axis (Step 5 of the skill: drive the signal,
-do not just read that it is connected), and it is serious enough to lead with
-rather than bury in a table.
-
-`lib/editor_settings.rb#create_action` installs the `settings.*` action group
-the window and the primary menu bind to (`win.show-primary-menu` → the
-"Wrap Lines Automatically (Alt+W)" item upstream's
-`editor-preferences-dialog.c`/`.ui` table documents in
-`component-inventory.md` §5, and the same mechanism backs every other
-boolean preference switch). When the compiled GSettings schema is **not**
-installed — confirmed with:
+The prior pass found `lib/editor_settings.rb#boolean_action` calling
+`.get_boolean` on `action.state`, which this binding already returns as a
+plain Ruby `true`/`false`, raising `NoMethodError` inside a GLib callback
+and segfaulting the process the first time any boolean preference fired
+without a compiled GSettings schema. Commit `3546574` changes the line to
+`!action.state` (no `.get_boolean`). Verified by running the drive suite
+fresh, in the same dev shell, under the same schema-absent conditions as
+the pass that found the crash:
 
 ```
 $ nix develop --command ruby -e "require 'gio2'; puts Gio::SettingsSchemaSource.default.lookup('org.rubygtkproject.GnomeTextEditor', true).inspect"
 nil
-```
-
-— `EditorSettings` falls back to its JSON store, per its own documented
-design (`lib/editor_settings.rb:7-17`), and `create_action` routes to
-`fallback_action` → `boolean_action` (`lib/editor_settings.rb:178-187`):
-
-```ruby
-def boolean_action(key)
-  Gio::SimpleAction.new(key, nil, GLib::Variant.new(self[key] == true)).tap do |action|
-    action.signal_connect('activate') do
-      (!action.state.get_boolean).tap do |value|
-```
-
-`action.state` on this binding already returns a plain Ruby `true`/`false`,
-not a `GLib::Variant`, so `.get_boolean` on it raises
-`NoMethodError: undefined method 'get_boolean' for true`. That exception is
-raised from inside a GLib C callback the Ruby VM cannot unwind through, and
-the process segfaults rather than printing a Ruby backtrace and continuing:
-
-```
 $ nix develop --command xvfb-run -a ruby test/drive_window.rb
 ...
-lib/editor_settings.rb:181:in 'block (2 levels) in EditorSettings#boolean_action': undefined method 'get_boolean' for true
+    ok   wrap-text flipped
 ...
-test/drive_window.rb: [BUG] Segmentation fault at 0x0000000000000019
+83 of 83 checks passed
+DRIVE OK
 ```
 
-Reproduced twice, deterministically, exit code 139 both times. This is not a
-drive-harness artifact: the crash is in `lib/editor_settings.rb`, reachable
-from the real primary menu, and it fires the first time *any* boolean
-preference is toggled while running without the compiled schema — which is
-the state of a fresh checkout in this project's own dev shell, since nothing
-in `flake.nix`, `bin/setup` or the Rakefile runs `glib-compile-schemas` on
-`data/schemas` as part of setup (confirmed: `schema_installed?` returned
-`nil` in the dev shell used to drive this audit).
+Run twice; both times clean, no crash, exit 0. This closes the prior pass's
+headline finding. **Verdict: parity, confirmed by re-running the exact
+reproduction, not by reading the diff and assuming it works.**
 
-**Component affected:** every `EditorPreferencesSwitch` row in
-`editor_preferences_dialog.rb` (8, per `component-inventory.md` §5) and the
-primary-menu "Wrap Lines Automatically" toggle — all of them install a
-boolean settings action through this one code path.
+## New finding: the Vim keybinding mode is a real component, but one of its
+two halves is missing
 
-**Verdict: gap.** The action exists (count: 1, matches upstream), installs
-under the right name (`settings.wrap-text`), and upstream's signal is
-present as a connection — but Step 5's drive proves it does not survive
-being fired. A connected signal is not a working signal; this is the exact
-failure mode the skill's Step 5 exists to catch, and the exact one a
-component-count comparison alone would have missed.
+`src/editor-page-vim.c` installs two things when `keybindings` becomes
+`"vim"`: the modal key controller (`GtkSourceVimIMContext` on a
+`Gtk::EventControllerKey`), and — through `src/editor-statusbar.c`'s
+`vim_bindings` `GBindingGroup` — the live `command-bar-text`/`command-text`
+labels that show the `:` command line the user is typing.
 
-## Units ported since `component-inventory.md` was last written
+`lib/editor_page_vim.rb` (commit `1f0d594`) ports the first half faithfully:
+same controller, same IM context, same three signal names, same three
+ex-command groups (`:q`/`:quit`/`^Wc`, `:q!`/`:quit!`, `:wq`) with matching
+behaviour on each. Read line-for-line against upstream; no divergence found
+in the command logic itself.
 
-`component-identification.md` (this run) lists the file-level deltas. Axis
-read on each, scoped to what is checkable without a GTK session per unit
-(full Step 4/5 screenshot-and-drive pass was spent on the crash above; these
-get the static three axes):
+The second half was never built. `lib/editor_statusbar.rb` carries the
+comment that predates this commit ("the Vim keybindings are not part of
+this port") unedited, and nothing in `lib/editor_page_vim.rb`,
+`lib/editor_page.rb` or `lib/editor_statusbar.rb` reads or binds
+`command_bar_text`/`command_text`. Confirmed the gem exposes both
+properties, so this is not a bindings limitation:
 
-| Unit | Count | CSS | Signals/actions | Text | Verdict |
-|---|---|---|---|:-:|---|
-| `editor_source_map.rb` | 1 `GtkSource::Map`, matches upstream's 1 | n/a (no app CSS class on it upstream either) | `notify::font-scale` present | — | parity |
-| `editor_language_dialog.rb` + `editor_language_row.rb` | matches §5's table (1 dialog, 2 list boxes, repeater rows) | `org-gnome-TextEditor`/`language-dialog` classes present in source | search-as-you-type present | not checked — see translation-parity.md, this file is unmarked | **gap** (text axis) |
-| `editor_recoloring.rb` | behaviour-only, matches | n/a | gated on `recolor-window` key; **not exercised by any `test/drive_*.rb` script** — see test-parity.md | — | unverified, not parity |
-| `editor_print_operation.rb` | 1 `Gtk::PrintOperation`, matches | n/a | `page.print` wired per `grep`; **not exercised by any driver** | — | unverified, not parity |
+```
+$ nix develop --command xvfb-run -a ruby -e "require 'gtksourceview5'; ctx = GtkSource::VimIMContext.new; p ctx.respond_to?(:command_bar_text); p ctx.respond_to?(:command_text)"
+true
+true
+```
 
-"Unverified" here is deliberately not "parity": per the runtime-gate framing
-of this audit, a component no check exercises is unverified, not done, and
-recoloring and printing are two of the four newly-landed non-widget
-components with zero coverage in `test/drive_*.rb`.
+**Verdict: gap.** The widget exists (the two `Gtk::Label`s in
+`EditorStatusbar`, per `component-inventory.md` §3), the data source exists
+(the IM context's own properties), and nothing connects them. A user who
+switches into Vim mode and starts typing `:wq` gets the correct underlying
+behaviour but no on-screen indication they are in command mode at all —
+exactly the kind of signal-axis miss the skill's Step 5 exists to catch,
+and exactly the kind a widget-count comparison (which would read "present,
+present" on both labels) would not.
+
+No `test/drive_*.rb` script would have surfaced this either way, because
+none of them ever sets `keybindings` to `vim` — see `test-parity.md`.
+
+## Units carried forward from the prior pass, re-checked
+
+| Unit | Prior verdict | This pass |
+|---|---|---|
+| `editor_source_map.rb` | parity | unchanged, re-confirmed present and wired |
+| `editor_language_dialog.rb` / `editor_language_row.rb` | gap (text axis, unmarked for translation) | unchanged — still true, see `translation-parity.md`; no translation work landed between passes |
+| `editor_recoloring.rb` | unverified (no driver exercised it) | now exercised indirectly — `test/drive_window.rb` runs clean end to end with the default style scheme active, but still no step changes `style-scheme` mid-run to prove recoloring re-fires on a scheme change. Still **unverified on its one distinguishing behaviour**, not parity |
+| `editor_print_operation.rb` | unverified (no driver exercised it) | `test/drive_window.rb` step 36 now constructs `EditorPrintOperation` and asserts it does not raise. That is real, narrow coverage (construction only — `.run` is explicitly skipped because Xvfb cannot answer the print dialog). Upgraded from "unverified" to **partial**, not full parity |
 
 ## Still-absent components (carried forward, not re-closed)
 
-- **Vim keybinding mode** (`src/editor-page-vim.c` → no `lib/` file). The
-  `keybindings` GSetting exists with a declared default and is read by
-  nothing. Upstream's statusbar command-bar/command-text labels are built in
-  `lib/editor_statusbar.rb` and have no content source — see
-  `accountability-ensurance.md` for the comment that describes this gap as a
-  scope decision rather than a missing behaviour.
-- **Translatable text on every component in this app** — not a per-component
-  gap but the universal fourth axis failure. See `translation-parity.md`:
-  0 of 59 languages ship, and the port's own `data/` strings are not wired to
-  anything that would translate them either. Every row in the tables above
-  that could show "✓" on the Text column instead shows "not checked" or
-  "unmarked", because there is no mechanism yet, full stop.
-
-## Stylesheet check
-
-`data/style.css` vs. the five bundled scheme XML files added this round:
-scheme files are data for `GtkSource::StyleSchemeManager`, not CSS, so they
-are compared as data, not against `data/style.css`. No divergence found
-between `data/style.css` and upstream's `src/style.css` beyond the renamed
-window CSS class (`org-gnome-TextEditor`, consistent with the app ID
-substitution already noted in `component-inventory.md` §7).
+- **Translatable text on every component in this app** — unchanged, the
+  universal fourth-axis failure. See `translation-parity.md`: 0 of 59
+  languages ship, 0 gettext call sites in `lib/`.
+- **`po/`** — unchanged, confirmed absent again this pass.
 
 ## Verdict
 
-Not clean. One confirmed crash-on-use gap (settings actions under the JSON
-fallback), two newly-landed non-widget components with no behavioural
-verification at all, one dialog with an unmarked-text gap, and the two
-carried-forward absences from `component-identification.md`.
+Not clean. The crash from the prior pass is fixed and the fix is
+reproduced, not assumed — but this pass found a new, real gap in the
+component it landed alongside the fix (the Vim statusbar binding), and two
+of the four previously-"unverified" components are still only partially
+covered by anything that actually runs.

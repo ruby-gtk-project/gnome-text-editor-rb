@@ -27,11 +27,18 @@ schemes under `data/styles/`, and libspelling/gtksourceview5 wiring in the
 gemspec, `nix/Gemfile` and `flake.nix` (verified in this refresh: `require
 "libspelling"` loads and exposes 8 constants under `Spelling`).
 
-Still absent: **`editor_page_vim.rb`** (Vim keybinding mode,
-`src/editor-page-vim.c` — nobody has written this; it is the only remaining
-component-level gap in the whole app) and **`po/`** plus any gettext call
-(the translation catalogue has not been started — that is the
-`translation-parity` skill's job).
+**Refreshed a third time against `lib/` as of commit `3546574`.**
+`editor_page_vim.rb` — called absent at round 1 and both prior refreshes —
+landed in commit `1f0d594` and is wired into `lib/editor_page.rb`; the
+GSettings-fallback boolean-action crash this branch's own
+`component-parity.md` found (every preference toggle segfaulting without a
+compiled schema) was fixed in commit `3546574`. Still absent: **`po/`** plus
+any gettext call (the translation catalogue has not been started — that is
+the `translation-parity` skill's job), and, inside `editor_page_vim.rb`'s
+otherwise-complete port, **the statusbar's live command-bar/command text is
+not bound** — see `component-identification.md` and `component-parity.md`
+for how this was confirmed and why it is a real user-visible gap rather
+than a documentation nit.
 
 A note on the mapping: the house style is one upstream source file to one
 `lib/<thing>.rb`, but upstream splits almost every component across a `.c`, a
@@ -493,7 +500,7 @@ is one upstream `.c`/`.h` pair to one `lib/*.rb`.
 | `src/defaults/editor-page-defaults.c` | `lib/editor_page_defaults.rb` | built-in per-language defaults provider | yes |
 | `src/editorconfig/editor-page-editorconfig.c`, `editorconfig-glib.c` | `lib/editor_page_editorconfig.rb` | `.editorconfig` settings provider | yes |
 | `src/modelines/editor-modeline-settings-provider.c`, `modeline-parser.c` | `lib/editor_modeline_settings_provider.rb` | vim/emacs modeline provider; `modelines/language-mappings` is data | yes (`data/language-mappings`) |
-| `src/editor-page-vim.c` | `lib/editor_page_vim.rb` | vim keybinding mode (`keybindings` GSetting), drives the statusbar command text | no — still not written; this is the only remaining component-level gap in sections 1–6 |
+| `src/editor-page-vim.c` | `lib/editor_page_vim.rb` | vim keybinding mode (`keybindings` GSetting), drives the statusbar command text | **yes** — landed in commit `1f0d594`. The controller, IM context and the three ex-command groups are present and wired into `lib/editor_page.rb`. The statusbar half (`command-bar-text`/`command-text`) is **not** wired — see `component-identification.md` and `component-parity.md` for the still-open gap this leaves |
 | `src/editor-print-operation.c` | `lib/editor_print_operation.rb` | `Gtk.PrintOperation` subclass behind `page.print`, uses `styles/printing.xml` | yes (landed in commit `f6b3c1a`; verified present and calling `GtkSource::StyleSchemeManager.default.get_scheme('printing')`) |
 | `src/editor-recoloring.c` | `lib/editor_recoloring.rb` | tints the window chrome from the style scheme (`recolor-window` GSetting) | yes (landed in commit `f6b3c1a`; verified present and calling `GtkSource::StyleSchemeManager`) |
 | `src/editor-joined-menu.c` | `lib/editor_joined_menu.rb` | concatenates `GMenuModel`s for the primary menu | yes |
@@ -537,10 +544,13 @@ Non-UI / build-only, no port target: `src/editor-types.h`,
   switched `editor_source_view.rb` onto `GtkSource::View`. Verified present
   against the current `lib/` tree in this refresh; not re-tabulated
   widget-by-widget (that is `component-parity`'s job, not re-done here).
-- 27 model/support files (section 6): **26 present, 1 absent**
-  (`editor_page_vim.rb` — Vim keybinding mode has not been written by anyone),
-  1 folded in (`editor-frame-source.c` → `editor_animation.rb`, confirmed in
-  this refresh to use a real `add_tick_callback`/frame-clock loop, not a stub),
+- 27 model/support files (section 6): **27 present, 0 absent at the file
+  level.** `editor_page_vim.rb` — called absent in rounds 1–2 — landed in
+  commit `1f0d594`; the controller, IM context and ex-commands are wired
+  into `lib/editor_page.rb`. Its statusbar half is not — see below, and do
+  not read "file present" as "component complete." 1 folded in
+  (`editor-frame-source.c` → `editor_animation.rb`, confirmed in this
+  refresh to use a real `add_tick_callback`/frame-clock loop, not a stub),
   plus the port-only `editor_settings.rb`. `editor_print_operation.rb` and
   `editor_recoloring.rb` — called absent above and in round 1 — also landed
   in commit `f6b3c1a`.
@@ -553,23 +563,28 @@ Non-UI / build-only, no port target: `src/editor-types.h`,
 
 The `GtkSource::View` swap that blocked the source map, language picker,
 style schemes, window recoloring and the print operation is done (commit
-`f6b3c1a`). Two things are left in the whole app, and neither depends on the
-other:
+`f6b3c1a`), and the Vim keybinding controller has since landed too (commit
+`1f0d594`, crash fix in `3546574`). What is left, at the file level, is down
+to one item, plus one sub-component gap inside a file this document had
+marked fully present:
 
-1. **`editor_page_vim.rb`** — Vim keybinding mode (`src/editor-page-vim.c`).
-   Nobody has written this yet; it is the single remaining component-level
-   gap.
-2. **`po/` + gettext calls throughout `lib/`** — the translation catalogue
+1. **`po/` + gettext calls throughout `lib/`** — the translation catalogue
    has not been started. This is the `translation-parity` skill's job, not
    touched in this component survey.
+2. **The Vim statusbar binding** (`command-bar-text`/`command-text` on
+   `EditorStatusbar`, bound from `GtkSource::VimIMContext` upstream via a
+   `GBindingGroup`). `editor_page_vim.rb` exists and the modal key handling
+   works, but the statusbar never shows the live `:` command line. This is
+   not a new file to write, it is wiring inside two existing files
+   (`lib/editor_statusbar.rb`, `lib/editor_page_vim.rb` or `lib/editor_page.rb`)
+   — see `component-identification.md` for how this was confirmed.
 
 ## Suggested port order (remaining work only)
 
 Round 1 (steps 1–10 of the original plan), the settings-provider stack,
-focus chain and source iterator (step 11's first half), and the
-`GtkSource::View` swap with everything it unblocked (the source map, the
-language dialog/row, the 5 style schemes, window recoloring, and the print
-operation — all landed in commit `f6b3c1a`) are done. What is left:
+focus chain and source iterator (step 11's first half), the
+`GtkSource::View` swap with everything it unblocked, and the Vim keybinding
+controller are done. What is left:
 
-1. `editor_page_vim.rb` (Vim keybinding mode, drives the statusbar command text).
+1. The Vim statusbar binding (small, scoped — see above).
 2. `po/` + gettext calls throughout `lib/` — independent of the above, can run in parallel.

@@ -1,103 +1,83 @@
 # Component identification — gnome-text-editor-rb
 
-Run with the `component-identification` skill, 2026-11-07.
+Run with the `component-identification` skill, 2026-11-07 (refresh 2).
 
 | | |
 |---|---|
 | Upstream | `origin/main` @ `51a092b` |
-| Port | `ruby` @ `8090c38` |
+| Port | `ruby` @ `3546574` |
 
-## What already exists and what this run adds
+## What already exists and what this run corrects
 
-`.reports/component-inventory.md` is a prior run of this exact skill, written
-against port commit `0837243`. It is a real, detailed inventory (widget
-tables, CSS, signals, menu models, action lists) and it is the right shape —
-but it is **three commits stale**. `git diff --stat 0837243..8090c38 --
-lib/ exe/ data/` shows the two commits since it was written changed exactly
-the files that document called absent:
+The prior two runs of this document (against port commits `0837243` and then
+`8090c38`) both went stale within a commit or two of being written — the
+second refresh itself still says `lib/editor_page_vim.rb` is "still absent"
+and lists the Vim statusbar labels as "permanently dead code with the Vim
+mode gone." Neither claim survives `git diff --stat 8090c38..3546574 --
+lib/`:
 
-| File | `component-inventory.md` said | Now |
+| File | Said as of `8090c38` | Now (`3546574`) |
 |---|---|---|
-| `lib/editor_source_map.rb` | absent | exists (72 lines) |
-| `lib/editor_language_dialog.rb` | absent | exists (149 lines) |
-| `lib/editor_language_row.rb` | absent | exists (45 lines) |
-| `lib/editor_recoloring.rb` | absent | exists (301 lines) |
-| `lib/editor_print_operation.rb` | absent | exists (151 lines) |
-| `data/styles/{builder,builder-dark,peninsula,peninsula-dark,printing}.xml` | absent | exist, 5 files |
-| `lib/editor_page_vim.rb` | absent | **still absent** |
+| `lib/editor_page_vim.rb` | absent | **exists** (117 lines, commit `1f0d594`) |
+| `lib/editor_settings.rb` boolean action | not flagged here (crash was `component-parity.md`'s finding) | fixed (commit `3546574`) |
 | `po/` + gettext calls | absent | **still absent** |
 
-So of the inventory's seven-item "still absent" list, five have since landed
-and two have not. That inventory was never re-run or even hand-edited to
-reflect its own repo's last two commits — a reader of it today is told five
-things are missing that are not, and is not told that nothing updated the
-two genuine survivors. See `accountability-ensurance.md` for why an
-unrefreshed ledger is itself a finding, not a formatting nit.
+So of the two genuine absences this document was carrying, one has closed.
+This is the second time in a row this document has gone stale across the
+very commits it was meant to track — see `accountability-ensurance.md` for
+why that pattern, not just this one instance, is the finding worth keeping
+open.
 
-## Identification of the newly-landed units (this run's actual new work)
+## Identification of the newly-landed unit
 
-### `src/editor-source-map.c`, `.ui` → `lib/editor_source_map.rb`
+### `src/editor-page-vim.c` → `lib/editor_page_vim.rb`
 
-| Widget | × | CSS | Signals/actions | Notes |
-|---|---:|---|---|---|
-| `Gtk::Box` (wrapper) | 1 | — | — | memoized root, per house style |
-| `GtkSource::Map` | 1 | — | `notify::font-scale` tracked on the parent view | binds `view=`, font via CSS, visible tied to `show-map` |
+| Type | × | Signals/behaviour | Notes |
+|---|---:|---|---|
+| `Gtk::EventControllerKey` | 1 | `propagation_phase = :capture`, carries the IM context | installed/removed on `changed::keybindings`, matches upstream's `self->vim` lifecycle |
+| `GtkSource::VimIMContext` | 1 | `write`, `edit`, `execute-command` signals wired | matches upstream's `on_vim_write_cb`/`on_vim_edit_cb`/`on_vim_execute_command_cb` |
+| ex-commands | 3 groups | `:q`/`:quit`/`^Wc`, `:q!`/`:quit!`, `:wq` | matches upstream's `QUIT`/`FORCE_QUIT`/`WRITE_QUIT` literal sets exactly |
 
-Matches upstream's one-widget template. No CSS class divergence found.
+Built, wired into `lib/editor_page.rb` (`@vim = EditorPageVim.new(self,
+settings)`, `@vim.build` called from `EditorPage#build`), and the
+`keybindings` GSetting now has a real reader (`@settings.keybindings ==
+'vim'`), closing the "declared default with no consumer" gap the prior
+refresh flagged.
 
-### `src/editor-language-dialog.c/.ui` → `lib/editor_language_dialog.rb`, and
-`src/editor-language-row.c/.ui` → `lib/editor_language_row.rb`
+## What this still finds absent or newly incomplete
 
-Built as `Adwaita::Dialog` + `Gtk::SearchEntry` + two `Gtk::ListBox`es
-(`recent_list_box`, `list_box`) feeding `EditorLanguageRow`, same shape as the
-upstream table in `component-inventory.md` §5. Confirmed present at the
-counts that document records as **absent** — this run supersedes that one
-row-for-row for this file.
-
-### `src/editor-recoloring.c` → `lib/editor_recoloring.rb`
-
-No widget of its own (behaviour-only, as upstream is), tints window chrome
-from the active `GtkSource::StyleScheme`, gated on the `recolor-window`
-GSetting. 301 lines — the single largest file this round, and the one most in
-need of the behavioural check in `component-parity.md` (does it actually fire
-on scheme change, not just on startup).
-
-### `src/editor-print-operation.c` → `lib/editor_print_operation.rb`
-
-`Gtk::PrintOperation` subclass wired to `page.print`, using
-`styles/printing.xml`. Present; not driven by any of the three `test/drive_*`
-scripts (see `test-parity.md`) — so "present in `lib/`" is as far as this
-component-identification pass can confirm it, and that is distinct from
-"works."
-
-## What this pass still finds absent
-
-- **`lib/editor_page_vim.rb`** — no file, no reference to a Vim keybinding
-  mode anywhere in `lib/`. The `keybindings` GSetting key exists in
-  `lib/editor_settings.rb` (`'keybindings' => 'default'`) with no consumer:
-  `grep -rn keybindings lib/` finds only the default's declaration, never a
-  read of it. A GSetting with a declared default and no reader is a
-  component identified as a stub, not a component.
-- **`po/`** — no directory, confirmed by `git ls-tree` and by the translation
+- **`po/`** — no directory, confirmed by `git ls-tree` and the translation
   census (`translation-parity.md`): zero `_()`/`N_()`/`gettext` call sites
-  anywhere in `lib/`.
-- **Vim statusbar text.** `lib/editor_statusbar.rb`'s own comment says
-  upstream "feeds [the command-bar and command labels] from its Vim
-  emulation" and the port leaves them "empty... because the Vim keybindings
-  are not part of this port." Those two labels (`command_bar_text`,
-  `command_text`) are built (the widgets exist, per
-  `component-inventory.md` §3) but are permanently dead code with the Vim
-  mode gone — a component that renders and never has content, which is a
-  narrower kind of gap than a missing widget and easy to miss on a widget
-  count alone.
+  anywhere in `lib/`. Unchanged from every prior run.
+
+- **Vim statusbar text is still not wired, and the comment describing why is
+  now actively false, not just an excuse.** `lib/editor_statusbar.rb:12-14`
+  still reads: "The command-bar and command labels upstream feeds from its
+  Vim emulation stay empty here, because the Vim keybindings are not part of
+  this port, so they are not shown." Vim keybindings **are** now part of
+  this port (`lib/editor_page_vim.rb`, wired into every page). The premise
+  the comment gives for the two labels staying empty no longer holds, and
+  nobody touched the comment or the labels when `editor_page_vim.rb` landed.
+  Confirmed the gem exposes what upstream binds: `GtkSource::VimIMContext`
+  responds to both `command_bar_text` and `command_text` (checked live via
+  `nix develop --command xvfb-run -a ruby -e "require
+  'gtksourceview5'; p GtkSource::VimIMContext.new.respond_to?(:command_bar_text)"`
+  → `true`, same for `command_text`). Upstream binds these through a
+  `GBindingGroup` (`src/editor-statusbar.c:192-198`) re-targeted per page;
+  the port has no equivalent, so a user who switches into Vim mode and types
+  `:` sees GtkSourceView's own modal key handling work but gets **no status
+  bar feedback at all** — the one piece of UI upstream dedicates to telling
+  the user they are mid-command is silently missing. This is a real,
+  user-visible component gap, not a documentation nit, and no `test/drive_*`
+  script would catch it because none of them ever sets `keybindings` to
+  `vim` (see `test-parity.md`).
 
 ## Scope note
 
-This pass did not re-walk the whole app widget-by-widget — `component-
-inventory.md` already did that at acceptable depth for 29 of the app's
-component files, and re-deriving it from scratch would not find anything
-`component-parity.md`'s per-axis check (below) does not already surface.
-What this pass contributes is the staleness finding above, the identification
-of the 5 newly-landed units, and the two genuine remaining absences
-(`editor_page_vim.rb`, `po/`) that both documents must now carry forward
-without being re-marked as closed.
+Unchanged from the prior refresh: this pass does not re-walk the whole app
+widget-by-widget. `component-inventory.md` carries the full per-file tables;
+this document's job is to track what has moved since the inventory was
+written and flag what it has not caught up on. The one item this pass adds
+beyond "is the file present" is the Vim statusbar binding gap above, found
+by reading `lib/editor_statusbar.rb`'s own comment against the state of the
+rest of the tree rather than trusting that the comment's premise still held.
