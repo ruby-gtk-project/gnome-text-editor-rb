@@ -5,6 +5,7 @@ require_relative 'editor_document'
 require_relative 'editor_info_bar'
 require_relative 'editor_page_actions'
 require_relative 'editor_page_settings'
+require_relative 'editor_page_vim'
 require_relative 'editor_path'
 require_relative 'editor_position_label'
 require_relative 'editor_search_bar'
@@ -29,6 +30,7 @@ class EditorPage < Gtk::Box
     @settings = settings
     @changed_listeners = []
     @actions = EditorPageActions.new(self)
+    @vim = EditorPageVim.new(self, settings)
   end
 
   attr_reader :document, :window
@@ -76,6 +78,7 @@ class EditorPage < Gtk::Box
       end
 
       @actions.build
+      @vim.build
 
       page_settings.on_changed { |changed| apply_settings(changed) }
       page_settings.build
