@@ -178,7 +178,7 @@ class EditorSettings
     def boolean_action(key)
       Gio::SimpleAction.new(key, nil, GLib::Variant.new(self[key] == true)).tap do |action|
         action.signal_connect('activate') do
-          (!action.state.get_boolean).tap do |value|
+          (!action.state).tap do |value|
             action.set_state(GLib::Variant.new(value))
             self[key] = value
           end
